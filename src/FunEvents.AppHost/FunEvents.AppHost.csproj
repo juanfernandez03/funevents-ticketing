@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\FunEvents.Api\FunEvents.Api.csproj" />
+    <ProjectReference Include="..\FunEvents.ConsoleClient\FunEvents.ConsoleClient.csproj" />
   </ItemGroup>
 
 </Project>
