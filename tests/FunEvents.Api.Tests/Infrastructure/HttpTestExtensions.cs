@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using FunEvents.Contracts;
 using FunEvents.Contracts.Reservations;
 
 namespace FunEvents.Api.Tests.Infrastructure;
@@ -11,12 +12,17 @@ public static class HttpTestExtensions
         this HttpClient client,
         string eventCode,
         string userCode,
-        int quantity)
+        int quantity,
+        string? idempotencyKey = null)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, $"/events/{eventCode}/reservations")
         {
             Content = JsonContent.Create(new ReserveTicketsRequest(userCode, quantity)),
         };
+        if (idempotencyKey is not null)
+        {
+            request.Headers.Add(ApiHeaders.IdempotencyKey, idempotencyKey);
+        }
 
         return client.SendAsync(request, TestContext.Current.CancellationToken);
     }
