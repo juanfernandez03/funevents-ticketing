@@ -9,8 +9,13 @@ builder.AddServiceDefaults();
 builder.AddData();
 builder.Services.AddUseCases();
 
+// DataAnnotations on the contracts are validated before any handler runs (.NET 10 Minimal APIs).
+builder.Services.AddValidation();
 builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
+
+// Malformed JSON is the client's fault: answer 400 in every environment instead of throwing.
+builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = false);
 
 var app = builder.Build();
 
@@ -26,5 +31,6 @@ if (app.Environment.IsDevelopment())
 
 app.MapDefaultEndpoints();
 app.MapEventEndpoints();
+app.MapReservationEndpoints();
 
 await app.RunAsync();
