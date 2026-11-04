@@ -54,6 +54,8 @@ Rules (Core-Driven, [ADR-0005](adr/0005-core-driven-structure.md)):
 - Use cases are concrete classes registered in DI. No MediatR, no interface per use case, no repository over EF Core.
 - Use cases return `Result<T>` with DTOs from `FunEvents.Contracts`; entities never leave the API.
 - One place maps `Error` → HTTP status + ProblemDetails.
+- Commands (`ReserveTickets`) and queries (`GetEvent`, `GetReservation`) are separate classes; queries use `AsNoTracking()` and project straight to DTOs ([ADR-0008](adr/0008-cqrs-at-use-case-level.md)).
+- Immutable code → id lookups go through HybridCache, in-memory only ([ADR-0007](adr/0007-hybridcache-for-reference-data.md)).
 
 Solution-wide settings: `global.json` pinned to .NET 10, `Directory.Build.props` (nullable, warnings as errors, analyzers), `Directory.Packages.props` (Central Package Management).
 
@@ -170,7 +172,7 @@ flowchart TD
     valid -- yes --> key{Idempotency key<br/>already stored?}
     key -- "yes, same payload" --> replay[201 original reservation<br/>Idempotent-Replayed: true]
     key -- "yes, different payload" --> e422[422 idempotency_key_reused]
-    key -- no --> lookup{Event and user exist?}
+    key -- no --> lookup{Event and user exist?<br/>ids from HybridCache}
     lookup -- no --> e404[404 event / user not found]
     lookup -- yes --> tx[BEGIN]
     tx --> update["UPDATE events SET available = available - n<br/>WHERE id = :id AND available >= n"]
@@ -181,6 +183,8 @@ flowchart TD
     unique -- no --> commit[COMMIT · 201 Created]
     unique -- yes --> race[ROLLBACK, decrement undone<br/>replay the winner's reservation]
 ```
+
+The event and user lookups are the only cached reads: their ids never change. Availability is never cached; it is decided by the `UPDATE` inside the transaction.
 
 Why this shape ([ADR-0002](adr/0002-atomic-conditional-update-for-inventory.md)):
 
@@ -258,6 +262,7 @@ Integration tests: the API hosted in memory with `WebApplicationFactory`, Postgr
 | 16 | 20 concurrent requests, same key | all `201`, one distinct id, one reservation, 1 ticket taken |
 | 17 | **50 concurrent buyers, 10 tickets** | exactly 10 × `201`, 40 × `409`, 0 left, 10 reserved |
 | 18 | **30 concurrent buyers of 3, 10 tickets** | exactly 3 × `201`, 1 left |
+| 19 | Reserve for an unknown event, create it, reserve again | `404` then `201`: a cache miss is not remembered |
 
 Tests 16 to 18 are the ones to show in the review: they prove the guarantees, not just the happy path.
 
@@ -275,10 +280,11 @@ Each step is one commit that builds and runs, so the history tells the story.
 | 4 | `feat(reservations):` `ReserveTickets`, `GetEvent`, `GetReservation`, `Result<T>`, contracts | use cases compile and are registered |
 | 5 | `feat(api):` endpoints, `AddValidation`, ProblemDetails, OpenAPI + Scalar | `curl` covers 201 / 400 / 404 / 409 |
 | 6 | `feat(reservations):` `Idempotency-Key` | replay, 422 and same-key race behave as in §3 |
-| 7 | `feat(client):` console client + AppHost scenarios | `client-rush` prints 10 created / 40 conflicts |
-| 8 | `test:` integration tests from §7 | `dotnet test` green, several runs in a row |
-| 9 | `ci:` GitHub Actions build + test | green badge |
-| 10 | `docs:` README: run instructions, sample output | someone else can clone and run it |
+| 7 | `perf(reservations):` HybridCache for event and user lookups | two fewer queries per reservation; misses not cached |
+| 8 | `feat(client):` console client + AppHost scenarios | `client-rush` prints 10 created / 40 conflicts |
+| 9 | `test:` integration tests from §7 | `dotnet test` green, several runs in a row |
+| 10 | `ci:` GitHub Actions build + test | green badge |
+| 11 | `docs:` README: run instructions, sample output | someone else can clone and run it |
 
 ---
 
@@ -299,6 +305,9 @@ Things that are easy to get wrong with this exact stack:
 | Console project name | A project called `FunEvents.Console` makes `Console.WriteLine` resolve to the namespace | Name it `FunEvents.ConsoleClient` |
 | Noisy client output | HttpClient and Polly log every attempt with stack traces | Raise `System.Net.Http.HttpClient` and `Polly` log levels in the client's `appsettings.json` |
 | PostgreSQL image | Aspire 13.6 uses `postgres:18.3` by default | Use the same image in Testcontainers |
+| Caching a miss | `HybridCache.GetOrCreateAsync` stores whatever the factory returns, `null` included: an event created later stays "not found" until expiry | When the lookup returns `null`, call `RemoveAsync(key)` |
+| Caching availability | A cached counter shows tickets that are gone, and if it were ever used for the decision it would oversell | Never cache availability; the `UPDATE` decides |
+| HybridCache with warnings as errors | Some HybridCache APIs may be flagged as experimental (`EXTEXP` diagnostics) | Suppress the specific diagnostic where it is used, with a comment |
 | Validation in another assembly | Worth checking that `AddValidation` picks up DataAnnotations on records in `FunEvents.Contracts` | It does on .NET 10; types must be public |
 
 ---

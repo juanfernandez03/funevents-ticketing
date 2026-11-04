@@ -323,6 +323,8 @@ The prototype (Part 2) implements the **Inventory & Reservations** slice and a c
 | Validation in one place | .NET 10 built-in Minimal API validation (DataAnnotations on the contracts) |
 | Observability | Aspire ServiceDefaults: OpenTelemetry traces, metrics, logs and health checks |
 | Orchestration | Aspire AppHost: PostgreSQL container, API and console client |
+| Read/write separation | Commands and queries as separate use cases over one database; full CQRS left for the real system ([ADR-0008](adr/0008-cqrs-at-use-case-level.md)) |
+| Caching | HybridCache in-memory for immutable code → id lookups; Redis as L2 in production ([ADR-0007](adr/0007-hybridcache-for-reference-data.md)) |
 
 Deliberate simplifications, listed so they are not mistaken for omissions:
 
@@ -351,3 +353,5 @@ Deliberate simplifications, listed so they are not mistaken for omissions:
 | [0004](adr/0004-buy-the-virtual-waiting-room.md) | Buy the virtual waiting room instead of building it |
 | [0005](adr/0005-core-driven-structure.md) | Core-Driven structure for the prototype |
 | [0006](adr/0006-dotnet-10-minimal-apis-aspire.md) | .NET 10, Minimal APIs and Aspire |
+| [0007](adr/0007-hybridcache-for-reference-data.md) | Cache immutable lookups with HybridCache (in-memory now, Redis later) |
+| [0008](adr/0008-cqrs-at-use-case-level.md) | CQRS at use-case level, without a separate read model |
