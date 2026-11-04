@@ -1,0 +1,8 @@
+<Project>
+  <!-- Central Package Management: every package version lives here, projects only reference names. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- Lets the versions below also pin transitive dependencies (e.g. EF Core pulled in by Aspire). -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+</Project>
