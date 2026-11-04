@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\FunEvents.ServiceDefaults\FunEvents.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\FunEvents.Contracts\FunEvents.Contracts.csproj" />
   </ItemGroup>
 
 </Project>
