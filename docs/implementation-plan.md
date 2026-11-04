@@ -263,17 +263,34 @@ Integration tests: the API hosted in memory with `WebApplicationFactory`, Postgr
 | 17 | **50 concurrent buyers, 10 tickets** | exactly 10 × `201`, 40 × `409`, 0 left, 10 reserved |
 | 18 | **30 concurrent buyers of 3, 10 tickets** | exactly 3 × `201`, 1 left |
 | 19 | Reserve for an unknown event, create it, reserve again | `404` then `201`: a cache miss is not remembered |
+| 20 | Same for an unknown user | `404` then `201` |
+| 21 | Event availability right after a reservation | always current: availability is never cached |
 
 Tests 16 to 18 are the ones to show in the review: they prove the guarantees, not just the happy path.
+
+The console client has its own unit tests, with a stub `HttpMessageHandler` instead of the API (no Docker): option parsing, the `Idempotency-Key` and `Idempotent-Replayed` headers, reading problem responses, exit codes, a fresh key per request, and the summary of a parallel run.
 
 ---
 
 ## 8. Build order
 
-Each step is one commit that builds and runs, so the history tells the story.
+Test first: each behaviour starts as a failing test (red) and is then made to pass with the smallest change (green). Every commit builds, so the history tells the story.
 
 | # | Commit | Done when |
 |---|---|---|
+| 1 | `chore:` solution, `global.json`, shared props, Central Package Management | `dotnet build` passes on an empty solution |
+| 2 | `feat:` AppHost + ServiceDefaults + empty API waiting for PostgreSQL | `dotnet run --project src/FunEvents.AppHost` shows a healthy `api` |
+| 3 | `test(events):` red, then `feat(events):` green | test infrastructure (Testcontainers + `WebApplicationFactory`); `GET /events/{code}` from PostgreSQL |
+| 4 | `test(reservations):` red, then `feat(reservations):` green | tests 1 to 11 pass with the simplest read-check-write |
+| 5 | `test(reservations):` red, then `fix(reservations):` green | tests 17 and 18 prove the naive version oversells; the atomic conditional update fixes it |
+| 6 | `test(reservations):` red, then `feat(reservations):` green | `Idempotency-Key`: tests 12 to 16 |
+| 7 | `test(reservations):` guard, then `perf(reservations):` HybridCache | tests 19 to 21 pass before and after; two fewer queries per reservation |
+| 8 | `test(client):` red, then `feat(client):` green, twice | options first, then the API client and the scenarios |
+| 9 | `feat(apphost):` client scenarios | `client-rush` prints 10 created / 40 conflicts |
+| 10 | `ci:` GitHub Actions build + test | green badge |
+| 11 | `docs:` README: run instructions, sample output | someone else can clone and run it |
+
+---|---|---|
 | 1 | `chore:` solution, `global.json`, shared props, Central Package Management | `dotnet build` passes on an empty solution |
 | 2 | `feat:` AppHost + ServiceDefaults + empty API waiting for PostgreSQL | `dotnet run --project src/FunEvents.AppHost` shows a healthy `api` |
 | 3 | `feat(data):` entities, `DbContext`, constraints, migration, seed | the three events exist after startup |
