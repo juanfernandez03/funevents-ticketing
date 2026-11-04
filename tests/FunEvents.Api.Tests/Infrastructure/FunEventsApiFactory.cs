@@ -54,9 +54,9 @@ public sealed class FunEventsApiFactory : WebApplicationFactory<Program>, IAsync
     }
 
     /// <summary>Creates an event that belongs to a single test, so tests never compete for the same inventory.</summary>
-    public async Task<string> CreateEventAsync(int tickets)
+    public async Task<string> CreateEventAsync(int tickets, string? code = null)
     {
-        var code = UniqueCode("EVT");
+        code ??= NewEventCode();
         await ExecuteAsync(
             """
             INSERT INTO events (id, code, name, venue, starts_at_utc, total_tickets, available_tickets)
@@ -66,9 +66,9 @@ public sealed class FunEventsApiFactory : WebApplicationFactory<Program>, IAsync
         return code;
     }
 
-    public async Task<string> CreateUserAsync()
+    public async Task<string> CreateUserAsync(string? code = null)
     {
-        var code = UniqueCode("USR");
+        code ??= NewUserCode();
         await ExecuteAsync(
             "INSERT INTO users (id, code, full_name, email) VALUES (@id, @code, 'Test user', @email)",
             ("id", Guid.CreateVersion7()), ("code", code), ("email", $"{code.ToLowerInvariant()}@example.com"));
@@ -115,6 +115,10 @@ public sealed class FunEventsApiFactory : WebApplicationFactory<Program>, IAsync
 
         return command;
     }
+
+    public static string NewEventCode() => UniqueCode("EVT");
+
+    public static string NewUserCode() => UniqueCode("USR");
 
     private static string UniqueCode(string prefix) => $"{prefix}-{Guid.NewGuid():N}"[..24].ToUpperInvariant();
 }
