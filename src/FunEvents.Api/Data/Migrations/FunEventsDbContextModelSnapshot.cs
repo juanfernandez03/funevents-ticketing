@@ -87,6 +87,11 @@ namespace FunEvents.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("event_id");
 
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("idempotency_key");
+
                     b.Property<int>("Quantity")
                         .HasColumnType("integer")
                         .HasColumnName("quantity");
@@ -100,6 +105,10 @@ namespace FunEvents.Api.Data.Migrations
 
                     b.HasIndex("EventId")
                         .HasDatabaseName("ix_reservations_event_id");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("ix_reservations_idempotency_key");
 
                     b.HasIndex("UserId")
                         .HasDatabaseName("ix_reservations_user_id");

@@ -12,4 +12,9 @@ public static class ReservationErrors
 
     public static Error NotFound(Guid reservationId) =>
         Error.NotFound("reservation_not_found", $"Reservation '{reservationId}' does not exist.");
+
+    public static Error IdempotencyKeyReused(string idempotencyKey) =>
+        Error.Unprocessable(
+            "idempotency_key_reused",
+            $"Idempotency key '{idempotencyKey}' was already used for a different reservation request.");
 }
