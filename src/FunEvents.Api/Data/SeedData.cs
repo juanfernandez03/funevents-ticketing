@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 namespace FunEvents.Api.Data;
 
 /// <summary>
-/// Known events the console client can use straight away.
+/// Known events and users the console client can use straight away.
 /// Runs through EF Core's UseSeeding/UseAsyncSeeding, i.e. after migrations are applied.
 /// </summary>
 public static class SeedData
@@ -14,6 +14,11 @@ public static class SeedData
         if (!context.Set<EventEntity>().Any())
         {
             context.AddRange(Events());
+        }
+
+        if (!context.Set<UserEntity>().Any())
+        {
+            context.AddRange(Users());
         }
 
         context.SaveChanges();
@@ -26,6 +31,11 @@ public static class SeedData
             context.AddRange(Events());
         }
 
+        if (!await context.Set<UserEntity>().AnyAsync(cancellationToken))
+        {
+            context.AddRange(Users());
+        }
+
         await context.SaveChangesAsync(cancellationToken);
     }
 
@@ -35,6 +45,13 @@ public static class SeedData
         NewEvent("HAMLET-MAD-2027", "Hamlet", "Teatro Central, Madrid", new(2027, 2, 12, 19, 30, 0, TimeSpan.Zero), 120),
         // Few tickets on purpose: used to show that concurrent buyers cannot oversell.
         NewEvent("JAZZ-VLC-2027", "Jazz under the Stars", "Open Air Stage, Valencia", new(2027, 6, 5, 21, 0, 0, TimeSpan.Zero), 10),
+    ];
+
+    private static UserEntity[] Users() =>
+    [
+        new() { Id = Guid.CreateVersion7(), Code = "USR-001", FullName = "Ana García", Email = "ana.garcia@example.com" },
+        new() { Id = Guid.CreateVersion7(), Code = "USR-002", FullName = "Liam Smith", Email = "liam.smith@example.com" },
+        new() { Id = Guid.CreateVersion7(), Code = "USR-003", FullName = "Sofia Rossi", Email = "sofia.rossi@example.com" },
     ];
 
     private static EventEntity NewEvent(string code, string name, string venue, DateTimeOffset startsAt, int tickets) => new()

@@ -71,6 +71,100 @@ namespace FunEvents.Api.Data.Migrations
                             t.HasCheckConstraint("ck_events_available_tickets", "available_tickets >= 0 AND available_tickets <= total_tickets");
                         });
                 });
+
+            modelBuilder.Entity("FunEvents.Api.Data.Entities.ReservationEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("quantity");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_reservations");
+
+                    b.HasIndex("EventId")
+                        .HasDatabaseName("ix_reservations_event_id");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_reservations_user_id");
+
+                    b.ToTable("reservations", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_reservations_quantity", "quantity > 0");
+                        });
+                });
+
+            modelBuilder.Entity("FunEvents.Api.Data.Entities.UserEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("code");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)")
+                        .HasColumnName("email");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("full_name");
+
+                    b.HasKey("Id")
+                        .HasName("pk_users");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasDatabaseName("ix_users_code");
+
+                    b.ToTable("users", (string)null);
+                });
+
+            modelBuilder.Entity("FunEvents.Api.Data.Entities.ReservationEntity", b =>
+                {
+                    b.HasOne("FunEvents.Api.Data.Entities.EventEntity", "Event")
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_reservations_events_event_id");
+
+                    b.HasOne("FunEvents.Api.Data.Entities.UserEntity", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_reservations_users_user_id");
+
+                    b.Navigation("Event");
+
+                    b.Navigation("User");
+                });
 #pragma warning restore 612, 618
         }
     }
