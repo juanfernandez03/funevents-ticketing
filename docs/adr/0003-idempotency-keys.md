@@ -1,0 +1,23 @@
+# ADR-0003: Idempotency keys on reservation requests
+
+- **Status:** Accepted
+- **Date:** 2026-11-04
+
+## Context
+
+Reservations arrive over unreliable networks from browsers, box office apps and partner systems. When a response is lost, the caller retries. Without protection, a retry creates a second reservation and takes tickets twice. The console client will use the standard HTTP resilience pipeline, which retries on transient errors.
+
+## Decision
+
+`POST /events/{eventCode}/reservations` accepts an optional `Idempotency-Key` header (up to 64 characters).
+
+- The key is stored on the reservation itself, under a unique index. No extra table is needed.
+- A repeated key with the **same** payload returns the original reservation with the original status code (`201`) and an `Idempotent-Replayed: true` header. Returning the first result, instead of an error, is what lets clients retry blindly.
+- A repeated key with a **different** payload returns `422 Unprocessable Entity`, because it is a client bug.
+- Two concurrent requests with the same key: one inserts, the other hits the unique index, its transaction rolls back (including the inventory decrement), and it replays the winner's result.
+
+## Consequences
+
+- Retries are safe for every client, including the resilience handler in the console client.
+- Keys live as long as the reservation. In production, a TTL (24 hours to a few days) would bound the index; the prototype does not need it.
+- The key is optional to keep the API easy to try. A production partner API would make it mandatory for writes.
