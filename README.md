@@ -75,7 +75,7 @@ flowchart LR
 | `POST` | `/events/{eventCode}/reservations` | Reserve tickets for a user (optional `Idempotency-Key`) |
 | `GET` | `/reservations/{reservationId}` | A reservation |
 
-The plan covers the API contract and error codes, the data model, the reservation algorithm, the console client, an 18-case test plan (including 50 concurrent buyers for 10 tickets) and the build order: [`docs/implementation-plan.md`](docs/implementation-plan.md).
+The plan covers the API contract and error codes, the data model, the reservation algorithm, the console client, a 19-case test plan (including 50 concurrent buyers for 10 tickets) and the build order: [`docs/implementation-plan.md`](docs/implementation-plan.md).
 
 > **Status:** design complete, implementation in progress. Run instructions will be added here with the code.
 
@@ -89,6 +89,14 @@ The plan covers the API contract and error codes, the data model, the reservatio
 | [0004](docs/adr/0004-buy-the-virtual-waiting-room.md) | Buy the virtual waiting room instead of building it |
 | [0005](docs/adr/0005-core-driven-structure.md) | Core-Driven structure for the prototype |
 | [0006](docs/adr/0006-dotnet-10-minimal-apis-aspire.md) | .NET 10, Minimal APIs and Aspire |
+| [0007](docs/adr/0007-hybridcache-for-reference-data.md) | Cache immutable lookups with HybridCache: in-memory in the prototype, Redis as second level in production |
+| [0008](docs/adr/0008-cqrs-at-use-case-level.md) | CQRS at use-case level; a separate read model was considered and left for the real system |
+
+### Considered and left out on purpose
+
+- **Full CQRS** (separate read store fed by events). Useful for catalog and search at scale, but it brings a message bus, projections and eventual consistency, and the brief asks for one reservation flow. Commands and queries are already separate classes, so the step is small when it is needed. → [ADR-0008](docs/adr/0008-cqrs-at-use-case-level.md)
+- **Redis.** The prototype caches immutable lookups in memory with HybridCache. With several instances and changing data (event pages, seat maps), Redis as the second cache level is the next step, without changing the use case code. → [ADR-0007](docs/adr/0007-hybridcache-for-reference-data.md)
+- **MediatR, AutoMapper, repositories over EF Core.** They add indirection without adding behaviour at this size. → [ADR-0005](docs/adr/0005-core-driven-structure.md)
 
 ## Repository layout
 
