@@ -1,3 +1,4 @@
+using FunEvents.Api.Data;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Testcontainers.PostgreSql;
@@ -29,7 +30,7 @@ public sealed class FunEventsApiFactory : WebApplicationFactory<Program>, IAsync
     {
         builder.UseEnvironment("Development");
         builder.UseSetting("Logging:LogLevel:Default", "Warning");
-        builder.UseSetting("ConnectionStrings:funevents", _postgres.GetConnectionString());
+        builder.UseSetting($"ConnectionStrings:{DataDependencyInjection.ConnectionName}", _postgres.GetConnectionString());
     }
 
     public override async ValueTask DisposeAsync()
