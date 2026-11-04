@@ -1,4 +1,5 @@
 using FunEvents.Api.Data.Entities;
+using FunEvents.Contracts;
 using FunEvents.Contracts.Events;
 using FunEvents.Contracts.Reservations;
 using Microsoft.EntityFrameworkCore;
@@ -42,6 +43,10 @@ public sealed class FunEventsDbContext(DbContextOptions<FunEventsDbContext> opti
 
             entity.HasOne(r => r.Event).WithMany().HasForeignKey(r => r.EventId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(r => r.User).WithMany().HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.Restrict);
+
+            // Unique index = idempotency guarantee, even for two requests racing with the same key.
+            entity.HasIndex(r => r.IdempotencyKey).IsUnique();
+            entity.Property(r => r.IdempotencyKey).HasMaxLength(ApiHeaders.IdempotencyKeyMaxLength);
         });
     }
 }

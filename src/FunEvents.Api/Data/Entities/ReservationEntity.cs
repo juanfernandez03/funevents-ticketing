@@ -16,4 +16,7 @@ public sealed class ReservationEntity
     public int Quantity { get; set; }
 
     public DateTimeOffset CreatedAtUtc { get; set; }
+
+    /// <summary>Client-supplied key that makes retries safe. Unique when present.</summary>
+    public string? IdempotencyKey { get; set; }
 }
