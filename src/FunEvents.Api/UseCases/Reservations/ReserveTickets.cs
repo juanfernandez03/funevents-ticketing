@@ -1,9 +1,11 @@
+using System.ComponentModel;
 using FunEvents.Api.Common;
 using FunEvents.Api.Data;
 using FunEvents.Api.Data.Entities;
 using FunEvents.Api.UseCases.Events;
 using FunEvents.Contracts.Reservations;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Hybrid;
 using Npgsql;
 
 namespace FunEvents.Api.UseCases.Reservations;
@@ -13,9 +15,16 @@ namespace FunEvents.Api.UseCases.Reservations;
 public sealed record ReservationOutcome(ReservationResponse Reservation, bool IsReplay);
 
 /// <summary>Command: takes tickets from an event's inventory for a user, without ever overselling.</summary>
-public sealed partial class ReserveTickets(FunEventsDbContext db, TimeProvider clock, ILogger<ReserveTickets> logger)
+public sealed partial class ReserveTickets(
+    FunEventsDbContext db,
+    HybridCache cache,
+    TimeProvider clock,
+    ILogger<ReserveTickets> logger)
 {
     private const string IdempotencyKeyIndex = "ix_reservations_idempotency_key";
+
+    // Codes never change once created, so their ids can be cached. Availability is never cached.
+    private static readonly HybridCacheEntryOptions LookupCacheOptions = new() { Expiration = TimeSpan.FromMinutes(10) };
 
     public async Task<Result<ReservationOutcome>> ExecuteAsync(
         string eventCode,
@@ -32,21 +41,13 @@ public sealed partial class ReserveTickets(FunEventsDbContext db, TimeProvider c
             }
         }
 
-        var targetEvent = await db.Events
-            .AsNoTracking()
-            .Where(e => e.Code == eventCode)
-            .Select(e => new CodeReference(e.Id, e.Code))
-            .SingleOrDefaultAsync(cancellationToken);
+        var targetEvent = await FindEventAsync(eventCode, cancellationToken);
         if (targetEvent is null)
         {
             return EventErrors.NotFound(eventCode);
         }
 
-        var buyer = await db.Users
-            .AsNoTracking()
-            .Where(u => u.Code == request.UserCode)
-            .Select(u => new CodeReference(u.Id, u.Code))
-            .SingleOrDefaultAsync(cancellationToken);
+        var buyer = await FindUserAsync(request.UserCode, cancellationToken);
         if (buyer is null)
         {
             return ReservationErrors.UserNotFound(request.UserCode);
@@ -117,6 +118,41 @@ public sealed partial class ReserveTickets(FunEventsDbContext db, TimeProvider c
         return new ReservationOutcome(response, IsReplay: false);
     }
 
+    private Task<CodeReference?> FindEventAsync(string eventCode, CancellationToken cancellationToken) =>
+        GetCachedLookupAsync($"event-id:{eventCode}", ct => db.Events
+            .AsNoTracking()
+            .Where(e => e.Code == eventCode)
+            .Select(e => new CodeReference(e.Id, e.Code))
+            .SingleOrDefaultAsync(ct), cancellationToken);
+
+    private Task<CodeReference?> FindUserAsync(string userCode, CancellationToken cancellationToken) =>
+        GetCachedLookupAsync($"user-id:{userCode}", ct => db.Users
+            .AsNoTracking()
+            .Where(u => u.Code == userCode)
+            .Select(u => new CodeReference(u.Id, u.Code))
+            .SingleOrDefaultAsync(ct), cancellationToken);
+
+    private async Task<CodeReference?> GetCachedLookupAsync(
+        string key,
+        Func<CancellationToken, Task<CodeReference?>> lookup,
+        CancellationToken cancellationToken)
+    {
+        var reference = await cache.GetOrCreateAsync(
+            key,
+            lookup,
+            static (lookup, ct) => new ValueTask<CodeReference?>(lookup(ct)),
+            LookupCacheOptions,
+            cancellationToken: cancellationToken);
+
+        // Never keep a miss: the event or user may be created a second later.
+        if (reference is null)
+        {
+            await cache.RemoveAsync(key, cancellationToken);
+        }
+
+        return reference;
+    }
+
     private Task<ReservationResponse?> FindByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken) =>
         db.Reservations
             .AsNoTracking()
@@ -150,8 +186,9 @@ public sealed partial class ReserveTickets(FunEventsDbContext db, TimeProvider c
             ConstraintName: IdempotencyKeyIndex,
         };
 
-    /// <summary>Internal id and public code of an event or a user.</summary>
-    private sealed record CodeReference(Guid Id, string Code);
+    /// <summary>Internal id and public code of an event or a user. Immutable, so the cache can share instances.</summary>
+    [ImmutableObject(true)]
+    public sealed record CodeReference(Guid Id, string Code);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Reservation {ReservationId}: {Quantity} ticket(s) for {EventCode} reserved by {UserCode}")]
     private partial void LogReserved(Guid reservationId, int quantity, string eventCode, string userCode);
