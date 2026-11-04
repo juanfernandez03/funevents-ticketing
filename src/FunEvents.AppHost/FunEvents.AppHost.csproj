@@ -1,0 +1,17 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.6.4">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AspireUseCliBundle>true</AspireUseCliBundle>
+    <UserSecretsId>be63d334-909d-41e5-8372-cb32e70c8f50</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.PostgreSQL" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FunEvents.Api\FunEvents.Api.csproj" />
+  </ItemGroup>
+
+</Project>

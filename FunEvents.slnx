@@ -1,2 +1,7 @@
 <Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FunEvents.Api/FunEvents.Api.csproj" />
+    <Project Path="src/FunEvents.AppHost/FunEvents.AppHost.csproj" />
+    <Project Path="src/FunEvents.ServiceDefaults/FunEvents.ServiceDefaults.csproj" />
+  </Folder>
 </Solution>
