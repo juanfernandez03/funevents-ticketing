@@ -57,7 +57,8 @@ public sealed record ClientOptions(
                 case "--user":
                     userCode = value;
                     break;
-                case "--idempotency-key":
+                // A blank key would reach the API as no key at all, leaving the client's retries unprotected.
+                case "--idempotency-key" when !string.IsNullOrWhiteSpace(value):
                     idempotencyKey = value;
                     break;
                 case "--quantity" when TryParsePositive(value, out quantity):
@@ -66,7 +67,7 @@ public sealed record ClientOptions(
                     break;
                 case "--api-url" when Uri.TryCreate(value, UriKind.Absolute, out apiUrl):
                     break;
-                case "--quantity" or "--parallel" or "--api-url":
+                case "--quantity" or "--parallel" or "--api-url" or "--idempotency-key":
                     error = $"Invalid value '{value}' for '{name}'.";
                     return false;
                 default:

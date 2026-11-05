@@ -79,7 +79,9 @@ public sealed class ReservationScenario(FunEventsApiClient api, TextWriter outpu
         var distinctReservations = created.Select(r => r.Value!.Id).Distinct().Count();
         output.WriteLine();
         output.WriteLine($"Distinct reservations: {distinctReservations}, tickets reserved: {created.DistinctBy(r => r.Value!.Id).Sum(r => r.Value!.Quantity)}");
-        return 0;
+
+        // A rush with some rejections is the expected outcome; a rush where nothing was reserved is a rejection.
+        return created.Length > 0 ? 0 : 1;
     }
 
     private void WriteEvent(EventResponse ev)

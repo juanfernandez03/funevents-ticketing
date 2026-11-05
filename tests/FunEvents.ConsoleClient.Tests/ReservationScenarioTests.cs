@@ -95,4 +95,21 @@ public sealed class ReservationScenarioTests
         Assert.Matches(@"409 Conflict\s+x3\s+not_enough_tickets", text);
         Assert.Contains("Distinct reservations: 2, tickets reserved: 2", text, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task RunAsync_InParallel_WhenNoReservationIsCreated_ReturnsOne()
+    {
+        var api = new StubApiHandler(request =>
+            request.Method == HttpMethod.Get ? ApiResponses.Event(available: 0)
+            : ApiResponses.Problem(HttpStatusCode.Conflict, "Conflict with the current state", "not_enough_tickets"));
+        using var output = new StringWriter();
+        var options = OneReservation with { Quantity = 1, Parallel = 5 };
+
+        var exitCode = await new ReservationScenario(api.CreateClient(), output)
+            .RunAsync(options, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, exitCode);
+        Assert.Matches(@"409 Conflict\s+x5\s+not_enough_tickets", output.ToString());
+        Assert.Contains("Distinct reservations: 0, tickets reserved: 0", output.ToString(), StringComparison.Ordinal);
+    }
 }
