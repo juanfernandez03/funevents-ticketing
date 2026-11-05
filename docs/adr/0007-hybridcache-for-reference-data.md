@@ -38,6 +38,7 @@ Not everything can be cached:
 ## Consequences
 
 - Two fewer queries per reservation on hot events.
+- Each lookup factory owns an async DI scope and its database context, so shared cache work does not depend on the initiating request's lifetime; the reservation transaction still uses the request context.
 - Codes are treated as immutable. Renaming an event code would need an explicit cache removal.
 - With warnings as errors, check whether the build flags any HybridCache API as experimental (`EXTEXP` diagnostics) and suppress it explicitly where used.
 - A test must prove that a miss is not cached: reserve for an unknown event (404), create it, reserve again (201).

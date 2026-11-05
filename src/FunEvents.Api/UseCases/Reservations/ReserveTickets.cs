@@ -18,6 +18,7 @@ public sealed record ReservationOutcome(ReservationResponse Reservation, bool Is
 public sealed partial class ReserveTickets(
     FunEventsDbContext db,
     HybridCache cache,
+    IServiceScopeFactory scopeFactory,
     TimeProvider clock,
     ILogger<ReserveTickets> logger)
 {
@@ -138,14 +139,14 @@ public sealed partial class ReserveTickets(
     }
 
     private Task<CodeReference?> FindEventAsync(string eventCode, CancellationToken cancellationToken) =>
-        GetCachedLookupAsync($"event-id:{eventCode}", ct => db.Events
+        GetCachedLookupAsync($"event-id:{eventCode}", (lookupDb, ct) => lookupDb.Events
             .AsNoTracking()
             .Where(e => e.Code == eventCode)
             .Select(e => new CodeReference(e.Id, e.Code))
             .SingleOrDefaultAsync(ct), cancellationToken);
 
     private Task<CodeReference?> FindUserAsync(string userCode, CancellationToken cancellationToken) =>
-        GetCachedLookupAsync($"user-id:{userCode}", ct => db.Users
+        GetCachedLookupAsync($"user-id:{userCode}", (lookupDb, ct) => lookupDb.Users
             .AsNoTracking()
             .Where(u => u.Code == userCode)
             .Select(u => new CodeReference(u.Id, u.Code))
@@ -153,13 +154,20 @@ public sealed partial class ReserveTickets(
 
     private async Task<CodeReference?> GetCachedLookupAsync(
         string key,
-        Func<CancellationToken, Task<CodeReference?>> lookup,
+        Func<FunEventsDbContext, CancellationToken, Task<CodeReference?>> lookup,
         CancellationToken cancellationToken)
     {
         var reference = await cache.GetOrCreateAsync(
             key,
-            lookup,
-            static (lookup, ct) => new ValueTask<CodeReference?>(lookup(ct)),
+            (scopeFactory, lookup),
+            static async (state, ct) =>
+            {
+                // HybridCache shares factory work across callers; its context must outlive any one request.
+                // Own the scope here so cancellation/disposal of the initiating request cannot dispose it.
+                await using var scope = state.scopeFactory.CreateAsyncScope();
+                var lookupDb = scope.ServiceProvider.GetRequiredService<FunEventsDbContext>();
+                return await state.lookup(lookupDb, ct);
+            },
             LookupCacheOptions,
             cancellationToken: cancellationToken);
 
