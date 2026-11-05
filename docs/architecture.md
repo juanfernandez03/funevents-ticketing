@@ -330,6 +330,8 @@ Deliberate simplifications, listed so they are not mistaken for omissions:
 
 - A reservation takes the tickets immediately; there is no hold expiry or payment step.
 - One inventory counter per event instead of pools.
+- One module only, so its tables live in the default schema; per-module schemas start with the second module.
+- Reservations do not record their sales channel (portal, office, partner); the real system stores it for attribution, partner settlement and channel allocations.
 - No gateway, authentication or waiting room; they belong to infrastructure, not to the prototype.
 - No outbox: the prototype does not publish events.
 

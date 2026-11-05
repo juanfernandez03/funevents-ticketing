@@ -383,7 +383,8 @@ The prototype covers the reservation slice. These belong to the full design and 
 3. **Outbox and events:** `ReservationCreated` written in the same transaction and relayed to a message bus.
 4. **Authentication and per-partner rate limits:** OAuth2 client credentials at the gateway; ASP.NET Core rate limiting per client as a fallback.
 5. **Inventory pools** per section or channel, to spread contention on very large events.
-6. **Idempotency key expiry** (24 hours to a few days) to keep the index small.
+6. **Idempotency key expiry** (24 hours to a few days) to keep the index small, and keys scoped per client (`partner_id`, `key`) once callers are authenticated.
+7. **Sales channel on each reservation** (portal, office, partner), for attribution, partner settlement and channel allocations.
 
 ## How this repository was built
 
