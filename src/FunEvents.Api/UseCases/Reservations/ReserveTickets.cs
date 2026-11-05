@@ -58,19 +58,38 @@ public sealed partial class ReserveTickets(
             // The Aspire integration enables EF Core connection retries, so the explicit transaction
             // has to run inside the execution strategy: on a transient failure the whole unit is retried.
             var strategy = db.Database.CreateExecutionStrategy();
-            return await strategy.ExecuteAsync(
+            var result = await strategy.ExecuteAsync(
                 ct => ReserveInTransactionAsync(targetEvent, buyer, request.Quantity, idempotencyKey, ct),
                 cancellationToken);
+
+            // Sold out may mean a concurrent request with the same key took the last tickets:
+            // it waited on the row lock, then saw the counter its own winner had decremented.
+            if (!result.IsSuccess && idempotencyKey is not null)
+            {
+                return await ReplayConcurrentWinnerAsync(idempotencyKey, eventCode, request, cancellationToken) ?? result;
+            }
+
+            return result;
         }
         catch (DbUpdateException exception) when (idempotencyKey is not null && IsIdempotencyKeyConflict(exception))
         {
             // A concurrent request with the same key committed first. Our transaction was rolled back,
             // inventory decrement included, so answering with the winner's result is all that is left.
-            db.ChangeTracker.Clear();
-            var winner = await FindByIdempotencyKeyAsync(idempotencyKey, cancellationToken)
+            return await ReplayConcurrentWinnerAsync(idempotencyKey, eventCode, request, cancellationToken)
                 ?? throw new InvalidOperationException($"Reservation with idempotency key '{idempotencyKey}' vanished.", exception);
-            return Replay(winner, eventCode, request, idempotencyKey);
         }
+    }
+
+    /// <summary>Replays the reservation a concurrent request committed with the same key, if there is one.</summary>
+    private async Task<Result<ReservationOutcome>?> ReplayConcurrentWinnerAsync(
+        string idempotencyKey,
+        string eventCode,
+        ReserveTicketsRequest request,
+        CancellationToken cancellationToken)
+    {
+        db.ChangeTracker.Clear();
+        var winner = await FindByIdempotencyKeyAsync(idempotencyKey, cancellationToken);
+        return winner is null ? null : Replay(winner, eventCode, request, idempotencyKey);
     }
 
     private async Task<Result<ReservationOutcome>> ReserveInTransactionAsync(
