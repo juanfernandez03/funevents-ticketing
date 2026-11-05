@@ -54,14 +54,40 @@ public sealed partial class ReserveTickets(
             return ReservationErrors.UserNotFound(request.UserCode);
         }
 
+        // Keep the identity stable across retries, including an ambiguous transaction commit.
+        // PostgreSQL stores microseconds: truncate so the response matches what is read back later.
+        var utcNow = clock.GetUtcNow();
+        var now = utcNow.AddTicks(-(utcNow.Ticks % TimeSpan.TicksPerMicrosecond));
+        var reservation = new ReservationEntity
+        {
+            Id = Guid.CreateVersion7(now),
+            EventId = targetEvent.Id,
+            UserId = buyer.Id,
+            Quantity = request.Quantity,
+            CreatedAtUtc = now,
+            IdempotencyKey = idempotencyKey,
+        };
+        var outcome = new ReservationOutcome(
+            new ReservationResponse(reservation.Id, targetEvent.Code, buyer.Code, request.Quantity, now),
+            IsReplay: false);
+
         try
         {
-            // The Aspire integration enables EF Core connection retries, so the explicit transaction
-            // has to run inside the execution strategy: on a transient failure the whole unit is retried.
             var strategy = db.Database.CreateExecutionStrategy();
-            var result = await strategy.ExecuteAsync(
-                ct => ReserveInTransactionAsync(targetEvent, buyer, request.Quantity, idempotencyKey, ct),
-                cancellationToken);
+            var result = await strategy.ExecuteInTransactionAsync(
+                reservation,
+                operation: (state, ct) => ReserveInTransactionAsync(state, targetEvent.Code, outcome, ct),
+                verifySucceeded: (state, ct) => db.Reservations.AsNoTracking().AnyAsync(r => r.Id == state.Id, ct),
+                cancellationToken: cancellationToken);
+
+            // EF retains the operation result when verification succeeds. The prebuilt outcome also
+            // lets us return the committed reservation without depending on tracked entity state.
+            result ??= Result<ReservationOutcome>.Success(outcome);
+            db.ChangeTracker.AcceptAllChanges();
+            if (result.IsSuccess)
+            {
+                LogReserved(reservation.Id, request.Quantity, targetEvent.Code, buyer.Code);
+            }
 
             // Sold out may mean a concurrent request with the same key took the last tickets:
             // it waited on the row lock, then saw the counter its own winner had decremented.
@@ -94,48 +120,32 @@ public sealed partial class ReserveTickets(
     }
 
     private async Task<Result<ReservationOutcome>> ReserveInTransactionAsync(
-        CodeReference targetEvent,
-        CodeReference buyer,
-        int quantity,
-        string? idempotencyKey,
+        ReservationEntity reservation,
+        string eventCode,
+        ReservationOutcome outcome,
         CancellationToken cancellationToken)
     {
         db.ChangeTracker.Clear();
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
         // Check-and-decrement in a single statement. PostgreSQL locks the row and re-evaluates the
         // WHERE clause after the lock, so concurrent buyers can never push the counter below zero.
         var updatedRows = await db.Events
-            .Where(e => e.Id == targetEvent.Id && e.AvailableTickets >= quantity)
+            .Where(e => e.Id == reservation.EventId && e.AvailableTickets >= reservation.Quantity)
             .ExecuteUpdateAsync(
-                setters => setters.SetProperty(e => e.AvailableTickets, e => e.AvailableTickets - quantity),
+                setters => setters.SetProperty(e => e.AvailableTickets, e => e.AvailableTickets - reservation.Quantity),
                 cancellationToken);
 
         if (updatedRows == 0)
         {
-            LogNotEnoughTickets(targetEvent.Code, quantity);
-            return ReservationErrors.NotEnoughTickets(targetEvent.Code, quantity);
+            // ExecuteInTransactionAsync commits on return, but zero updated rows means there
+            // are no changes to commit: no inventory decrement and no reservation insert.
+            LogNotEnoughTickets(eventCode, reservation.Quantity);
+            return ReservationErrors.NotEnoughTickets(eventCode, reservation.Quantity);
         }
 
-        // PostgreSQL stores microseconds: truncate now so the response matches what is read back later.
-        var utcNow = clock.GetUtcNow();
-        var now = utcNow.AddTicks(-(utcNow.Ticks % TimeSpan.TicksPerMicrosecond));
-        var reservation = new ReservationEntity
-        {
-            Id = Guid.CreateVersion7(now),
-            EventId = targetEvent.Id,
-            UserId = buyer.Id,
-            Quantity = quantity,
-            CreatedAtUtc = now,
-            IdempotencyKey = idempotencyKey,
-        };
         db.Reservations.Add(reservation);
-        await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-
-        LogReserved(reservation.Id, quantity, targetEvent.Code, buyer.Code);
-        var response = new ReservationResponse(reservation.Id, targetEvent.Code, buyer.Code, quantity, now);
-        return new ReservationOutcome(response, IsReplay: false);
+        await db.SaveChangesAsync(acceptAllChangesOnSuccess: false, cancellationToken);
+        return outcome;
     }
 
     private Task<CodeReference?> FindEventAsync(string eventCode, CancellationToken cancellationToken) =>

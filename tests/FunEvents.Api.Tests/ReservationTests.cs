@@ -97,6 +97,8 @@ public sealed class ReservationTests(FunEventsApiFactory api)
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Equal("not_enough_tickets", await response.ReadProblemCodeAsync());
         Assert.Equal(2, await api.GetAvailableTicketsAsync(eventCode));
+        Assert.Equal(0, await api.CountReservationsAsync(eventCode));
+        Assert.Equal(0, await api.CountReservedTicketsAsync(eventCode));
     }
 
     [Fact]
