@@ -83,4 +83,42 @@ public sealed class IdempotencyTests(FunEventsApiFactory api)
         Assert.Equal(1, await api.CountReservationsAsync(eventCode));
         Assert.Equal(9, await api.GetAvailableTicketsAsync(eventCode));
     }
+
+    [Fact]
+    public async Task Reserve_ConcurrentRequestsWithSameKeyForTheLastTicket_AllReplayTheWinner()
+    {
+        // The losers wait on the inventory row and then find it sold out, by their own winner.
+        // A retry must never be told "sold out" for a purchase that succeeded.
+        var eventCode = await api.CreateEventAsync(tickets: 1);
+        var userCode = await api.CreateUserAsync();
+        var key = Guid.NewGuid().ToString();
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 20)
+            .Select(_ => _client.ReserveAsync(eventCode, userCode, quantity: 1, key)));
+
+        Assert.All(responses, r => Assert.Equal(HttpStatusCode.Created, r.StatusCode));
+        var ids = await Task.WhenAll(responses.Select(r => r.ReadReservationAsync()));
+        Assert.Single(ids.Select(r => r.Id).Distinct());
+        Assert.Equal(1, await api.CountReservationsAsync(eventCode));
+        Assert.Equal(0, await api.GetAvailableTicketsAsync(eventCode));
+    }
+
+    [Fact]
+    public async Task Reserve_ConcurrentRequestsWithDifferentKeysForTheLastTicket_OnlyOneWinsTheRestGet409()
+    {
+        // Distinct keys are distinct purchases: replaying must never hand one buyer another's reservation.
+        var eventCode = await api.CreateEventAsync(tickets: 1);
+        var userCode = await api.CreateUserAsync();
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 20)
+            .Select(_ => _client.ReserveAsync(eventCode, userCode, quantity: 1, Guid.NewGuid().ToString())));
+
+        Assert.Single(responses, r => r.StatusCode == HttpStatusCode.Created);
+        var rejected = responses.Where(r => r.StatusCode != HttpStatusCode.Created).ToArray();
+        Assert.All(rejected, r => Assert.Equal(HttpStatusCode.Conflict, r.StatusCode));
+        Assert.All(await Task.WhenAll(rejected.Select(r => r.ReadProblemCodeAsync())),
+            code => Assert.Equal("not_enough_tickets", code));
+        Assert.Equal(1, await api.CountReservationsAsync(eventCode));
+        Assert.Equal(0, await api.GetAvailableTicketsAsync(eventCode));
+    }
 }
