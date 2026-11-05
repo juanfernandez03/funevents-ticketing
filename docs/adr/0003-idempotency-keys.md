@@ -20,4 +20,5 @@ Reservations arrive over unreliable networks from browsers, box office apps and 
 
 - Retries are safe for every client, including the resilience handler in the console client.
 - Keys live as long as the reservation. In production, a TTL (24 hours to a few days) would bound the index; the prototype does not need it.
+- Keys are unique globally because the prototype has no authenticated callers. Once partners authenticate, the key is scoped per client (`partner_id`, `key`), so two partners can never collide on the same key.
 - The key is optional to keep the API easy to try. A production partner API would make it mandatory for writes.
