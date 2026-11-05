@@ -36,6 +36,7 @@ public sealed class OversellingTests(FunEventsApiFactory api)
             .Select(_ => _client.ReserveAsync(eventCode, userCode, quantity: 3)));
 
         Assert.Equal(3, responses.Count(r => r.StatusCode == HttpStatusCode.Created));
+        Assert.Equal(27, responses.Count(r => r.StatusCode == HttpStatusCode.Conflict));
         Assert.Equal(1, await api.GetAvailableTicketsAsync(eventCode));
         Assert.Equal(9, await api.CountReservedTicketsAsync(eventCode));
     }
