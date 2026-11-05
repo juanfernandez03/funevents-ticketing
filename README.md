@@ -203,7 +203,7 @@ FunEvents.ConsoleClient --event <code> --user <code> [options]
   --api-url <url>          API base address (default: service discovery, http://localhost:5080)
 ```
 
-It shows the event, reserves, and shows what is left. Every request carries an idempotency key, which is what makes the built-in HTTP retries safe for a `POST`. Exit codes: `0` done, `1` rejected or API unreachable, `2` invalid arguments.
+It shows the event, reserves, and shows what is left. Every request carries an idempotency key, which is what makes the built-in HTTP retries safe for a `POST`. Exit codes: `0` done (with `--parallel`, at least one reservation created), `1` rejected or API unreachable, `2` invalid arguments, such as a blank `--idempotency-key`.
 
 One reservation:
 
@@ -336,12 +336,12 @@ The API tests start PostgreSQL with Testcontainers and host the API in memory wi
 |---|---|---|
 | `EventTests` | 2 | Seeded event with its availability; unknown code → `404` |
 | `ReservationTests` | 13 | Happy path, `Location`, inventory, `400`/`404`/`409` with their codes, malformed JSON, the last tickets, reading back |
-| `OversellingTests` | 2 | 50 concurrent buyers for 10 tickets → exactly 10; 30 buyers of 3 for 10 → exactly 3 |
-| `IdempotencyTests` | 5 | Replay, `422` on a reused key, key length, no key, 20 concurrent requests with one key → one reservation |
+| `OversellingTests` | 2 | 50 concurrent buyers for 10 tickets → exactly 10; 30 buyers of 3 for 10 → exactly 3; every other buyer gets `409` |
+| `IdempotencyTests` | 7 | Replay, `422` on a reused key, key length, no key, 20 concurrent requests with one key → one reservation, also for the last ticket; distinct keys for the last ticket → one `201`, the rest `409` |
 | `LookupCacheTests` | 3 | Event or user created after a failed lookup is found; availability is never stale |
-| `ClientOptionsTests` | 12 | Defaults, every option, required and invalid values |
+| `ClientOptionsTests` | 14 | Defaults, every option, required and invalid values |
 | `FunEventsApiClientTests` | 4 | Idempotency header, replay flag, problem responses, URL escaping |
-| `ReservationScenarioTests` | 5 | Exit codes, a new key per request, no reservation for an unknown event, parallel summary |
+| `ReservationScenarioTests` | 6 | Exit codes (including a parallel run where nothing is reserved), a new key per request, no reservation for an unknown event, parallel summary |
 
 CI builds and runs every test on pushes to `main` and on pull requests ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 
