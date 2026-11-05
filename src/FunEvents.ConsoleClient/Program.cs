@@ -31,8 +31,30 @@ using var host = builder.Build();
 await host.StartAsync();
 
 var scenario = new ReservationScenario(host.Services.GetRequiredService<FunEventsApiClient>(), Console.Out);
-var exitCode = await scenario.RunAsync(options, CancellationToken.None);
+var lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
+try
+{
+    return await Program.RunScenarioAsync(scenario, options, Console.Out, lifetime.ApplicationStopping);
+}
+finally
+{
+    // Do not use ApplicationStopping here: shutdown must still flush telemetry after cancellation.
+    await host.StopAsync();
+}
 
-// Stopping the host flushes the telemetry before the process exits.
-await host.StopAsync();
-return exitCode;
+public partial class Program
+{
+    public static async Task<int> RunScenarioAsync(
+        ReservationScenario scenario, ClientOptions options, TextWriter output, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await scenario.RunAsync(options, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            output.WriteLine("[CANCELLED] Stopped by the user");
+            return 130;
+        }
+    }
+}
