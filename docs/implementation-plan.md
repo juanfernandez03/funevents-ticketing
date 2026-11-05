@@ -11,7 +11,6 @@ The prototype is a console client that reserves tickets for a known event and us
 - [7. Test plan](#7-test-plan)
 - [8. Build order](#8-build-order)
 - [9. Pitfalls to watch for](#9-pitfalls-to-watch-for)
-- [10. Ready for the live change](#10-ready-for-the-live-change)
 
 ---
 
@@ -313,19 +312,3 @@ Things that are easy to get wrong with this exact stack:
 | Caching availability | A cached counter shows tickets that are gone, and if it were ever used for the decision it would oversell | Never cache availability; the `UPDATE` decides |
 | HybridCache with warnings as errors | Some HybridCache APIs may be flagged as experimental (`EXTEXP` diagnostics) | Suppress the specific diagnostic where it is used, with a comment |
 | Validation in another assembly | Worth checking that `AddValidation` picks up DataAnnotations on records in `FunEvents.Contracts` | It does on .NET 10; types must be public |
-
----
-
-## 10. Ready for the live change
-
-The review includes a small change made live. The likely ones and where they land:
-
-| Change | Where | Notes |
-|---|---|---|
-| Cancel a reservation | new `CancelReservation` use case + `DELETE /reservations/{id}` | Mirror of the reserve: `UPDATE ... SET available = available + n WHERE available + n <= total`; mark the reservation cancelled in the same transaction |
-| Max tickets per user per event | `ReserveTickets` | Sum the user's quantity for the event inside the transaction; new `409` code |
-| Holds that expire | `ReservationEntity` (`Status`, `ExpiresAtUtc`) + a `BackgroundService` | Sweeper returns expired holds with the same conditional update |
-| List a user's reservations | new `GetUserReservations` use case + `GET /users/{code}/reservations` | Read-only projection |
-| Change the per-request limit | `ReservationLimits.MaxTicketsPerReservation` | Validation picks it up; add a test |
-
-Practise one of them before the review, on your own machine, from a clean clone.
