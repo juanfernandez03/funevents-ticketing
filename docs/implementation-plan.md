@@ -290,19 +290,6 @@ Test first: each behaviour starts as a failing test (red) and is then made to pa
 | 10 | `ci:` GitHub Actions build + test | green badge |
 | 11 | `docs:` README: run instructions, sample output | someone else can clone and run it |
 
----|---|---|
-| 1 | `chore:` solution, `global.json`, shared props, Central Package Management | `dotnet build` passes on an empty solution |
-| 2 | `feat:` AppHost + ServiceDefaults + empty API waiting for PostgreSQL | `dotnet run --project src/FunEvents.AppHost` shows a healthy `api` |
-| 3 | `feat(data):` entities, `DbContext`, constraints, migration, seed | the three events exist after startup |
-| 4 | `feat(reservations):` `ReserveTickets`, `GetEvent`, `GetReservation`, `Result<T>`, contracts | use cases compile and are registered |
-| 5 | `feat(api):` endpoints, `AddValidation`, ProblemDetails, OpenAPI + Scalar | `curl` covers 201 / 400 / 404 / 409 |
-| 6 | `feat(reservations):` `Idempotency-Key` | replay, 422 and same-key race behave as in §3 |
-| 7 | `perf(reservations):` HybridCache for event and user lookups | two fewer queries per reservation; misses not cached |
-| 8 | `feat(client):` console client + AppHost scenarios | `client-rush` prints 10 created / 40 conflicts |
-| 9 | `test:` integration tests from §7 | `dotnet test` green, several runs in a row |
-| 10 | `ci:` GitHub Actions build + test | green badge |
-| 11 | `docs:` README: run instructions, sample output | someone else can clone and run it |
-
 ---
 
 ## 9. Pitfalls to watch for
