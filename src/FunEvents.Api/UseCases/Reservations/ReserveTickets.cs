@@ -80,9 +80,7 @@ public sealed partial class ReserveTickets(
                 verifySucceeded: (state, ct) => db.Reservations.AsNoTracking().AnyAsync(r => r.Id == state.Id, ct),
                 cancellationToken: cancellationToken);
 
-            // EF retains the operation result when verification succeeds. The prebuilt outcome also
-            // lets us return the committed reservation without depending on tracked entity state.
-            result ??= Result<ReservationOutcome>.Success(outcome);
+            // When verifySucceeded confirms a lost commit, EF returns the result the operation already produced.
             db.ChangeTracker.AcceptAllChanges();
             if (result.IsSuccess)
             {
