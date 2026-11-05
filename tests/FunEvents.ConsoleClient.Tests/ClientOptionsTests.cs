@@ -42,6 +42,8 @@ public sealed class ClientOptionsTests
     [InlineData("--quantity", "two")]
     [InlineData("--parallel", "0")]
     [InlineData("--api-url", "not-a-url")]
+    [InlineData("--idempotency-key", "")]
+    [InlineData("--idempotency-key", "   ")]
     public void TryParse_WithInvalidValue_Fails(string option, string value)
     {
         var parsed = ClientOptions.TryParse([.. Args("--event ROCK-BCN-2027 --user USR-001"), option, value], out _, out var error);
