@@ -1,4 +1,6 @@
 using System.Net;
+using System.Text;
+using Polly.Timeout;
 using FunEvents.ConsoleClient.Tests.Infrastructure;
 
 namespace FunEvents.ConsoleClient.Tests;
@@ -94,6 +96,54 @@ public sealed class ReservationScenarioTests
         Assert.Matches(@"201 Created\s+x2\b", text);
         Assert.Matches(@"409 Conflict\s+x3\s+not_enough_tickets", text);
         Assert.Contains("Distinct reservations: 2, tickets reserved: 2", text, StringComparison.Ordinal);
+    }
+
+    public static TheoryData<Exception, string> TransportFailures => new()
+    {
+        { new HttpRequestException("Connection refused"), "[FAILED] Could not reach the API: Connection refused" },
+        { new TimeoutRejectedException(), "[FAILED] The API did not answer in time" },
+        { new TaskCanceledException(), "[FAILED] The API did not answer in time" },
+    };
+
+    [Theory]
+    [MemberData(nameof(TransportFailures))]
+    public async Task RunAsync_WhenTheApiCannotBeReached_ExplainsItAndReturnsOne(Exception failure, string message)
+    {
+        var api = new StubApiHandler(_ => throw failure);
+        using var output = new StringWriter();
+
+        var exitCode = await new ReservationScenario(api.CreateClient(), output)
+            .RunAsync(OneReservation, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains(message, output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenTheApiAnswersWithUnreadableJson_ExplainsItAndReturnsOne()
+    {
+        var api = new StubApiHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("<html>not the API</html>", Encoding.UTF8, "application/json"),
+        });
+        using var output = new StringWriter();
+
+        var exitCode = await new ReservationScenario(api.CreateClient(), output)
+            .RunAsync(OneReservation, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("[FAILED] The API sent a response the client cannot read", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenTheCallerCancels_DoesNotHideTheCancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        var api = new StubApiHandler(_ => ApiResponses.Event());
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            new ReservationScenario(api.CreateClient(), TextWriter.Null).RunAsync(OneReservation, cancellation.Token));
     }
 
     [Fact]

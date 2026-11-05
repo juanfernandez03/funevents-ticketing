@@ -42,6 +42,7 @@ public sealed class ClientOptionsTests
     [InlineData("--quantity", "two")]
     [InlineData("--parallel", "0")]
     [InlineData("--api-url", "not-a-url")]
+    [InlineData("--api-url", "ftp://funevents.test")]
     [InlineData("--idempotency-key", "")]
     [InlineData("--idempotency-key", "   ")]
     public void TryParse_WithInvalidValue_Fails(string option, string value)
