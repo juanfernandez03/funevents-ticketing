@@ -22,7 +22,7 @@ public sealed record ClientOptions(
           --quantity <n>             Tickets per reservation (default: 1)
           --parallel <n>             Send n reservations at the same time (default: 1)
           --idempotency-key <key>    Reuse this key instead of a new one per request
-          --api-url <url>            API base address (default: service discovery, http://localhost:5080)
+          --api-url <url>            http or https API base address (default: service discovery, http://localhost:5080)
 
         Examples:
           FunEvents.ConsoleClient --event ROCK-BCN-2027 --user USR-001 --quantity 2
@@ -65,7 +65,8 @@ public sealed record ClientOptions(
                     break;
                 case "--parallel" when TryParsePositive(value, out parallel):
                     break;
-                case "--api-url" when Uri.TryCreate(value, UriKind.Absolute, out apiUrl):
+                case "--api-url" when Uri.TryCreate(value, UriKind.Absolute, out apiUrl)
+                    && (apiUrl.Scheme == Uri.UriSchemeHttp || apiUrl.Scheme == Uri.UriSchemeHttps):
                     break;
                 case "--quantity" or "--parallel" or "--api-url" or "--idempotency-key":
                     error = $"Invalid value '{value}' for '{name}'.";

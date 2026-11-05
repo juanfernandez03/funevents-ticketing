@@ -200,10 +200,10 @@ FunEvents.ConsoleClient --event <code> --user <code> [options]
   --quantity <n>           Tickets per reservation (default: 1)
   --parallel <n>           Send n reservations at the same time (default: 1)
   --idempotency-key <key>  Reuse this key instead of a new one per request
-  --api-url <url>          API base address (default: service discovery, http://localhost:5080)
+  --api-url <url>          http or https API base address (default: service discovery, http://localhost:5080)
 ```
 
-It shows the event, reserves, and shows what is left. Every request carries an idempotency key, which is what makes the built-in HTTP retries safe for a `POST`. Exit codes: `0` done (with `--parallel`, at least one reservation created), `1` rejected or API unreachable, `2` invalid arguments, such as a blank `--idempotency-key`.
+It shows the event, reserves, and shows what is left. Every request carries an idempotency key, which is what makes the built-in HTTP retries safe for a `POST`. Exit codes: `0` done (with `--parallel`, at least one reservation created), `1` rejected, API unreachable, timed out or answering something that is not the API, `2` invalid arguments, such as a blank `--idempotency-key`.
 
 One reservation:
 

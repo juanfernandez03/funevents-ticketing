@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.Net;
+using System.Text.Json;
 using FunEvents.Contracts.Events;
 using FunEvents.Contracts.Reservations;
+using Polly.Timeout;
 
 namespace FunEvents.ConsoleClient;
 
@@ -9,6 +11,38 @@ namespace FunEvents.ConsoleClient;
 public sealed class ReservationScenario(FunEventsApiClient api, TextWriter output)
 {
     public async Task<int> RunAsync(ClientOptions options, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await RunScenarioAsync(options, cancellationToken);
+        }
+        catch (HttpRequestException exception)
+        {
+            return Fail($"Could not reach the API: {exception.Message}");
+        }
+        catch (Exception exception) when (IsTimeout(exception, cancellationToken))
+        {
+            return Fail("The API did not answer in time");
+        }
+        catch (JsonException)
+        {
+            return Fail("The API sent a response the client cannot read. Check --api-url");
+        }
+    }
+
+    // The resilience pipeline reports its timeouts with Polly; HttpClient reports its own as a cancellation
+    // the caller did not ask for. A cancellation the caller asked for is not a failure and keeps propagating.
+    private static bool IsTimeout(Exception exception, CancellationToken cancellationToken) =>
+        exception is TimeoutRejectedException
+        || (exception is OperationCanceledException && !cancellationToken.IsCancellationRequested);
+
+    private int Fail(string message)
+    {
+        output.WriteLine($"[FAILED] {message}");
+        return 1;
+    }
+
+    private async Task<int> RunScenarioAsync(ClientOptions options, CancellationToken cancellationToken)
     {
         output.WriteLine($"FunEvents test client -> {api.BaseAddress}");
         output.WriteLine();

@@ -31,16 +31,7 @@ using var host = builder.Build();
 await host.StartAsync();
 
 var scenario = new ReservationScenario(host.Services.GetRequiredService<FunEventsApiClient>(), Console.Out);
-int exitCode;
-try
-{
-    exitCode = await scenario.RunAsync(options, CancellationToken.None);
-}
-catch (HttpRequestException exception)
-{
-    Console.Error.WriteLine($"[FAILED] Could not reach the API: {exception.Message}");
-    exitCode = 1;
-}
+var exitCode = await scenario.RunAsync(options, CancellationToken.None);
 
 // Stopping the host flushes the telemetry before the process exits.
 await host.StopAsync();
