@@ -27,6 +27,22 @@ public static class HttpTestExtensions
         return client.SendAsync(request, TestContext.Current.CancellationToken);
     }
 
+    /// <summary>Sends the Idempotency-Key exactly as given, including blank or repeated values.</summary>
+    public static Task<HttpResponseMessage> ReserveWithRawKeyAsync(
+        this HttpClient client,
+        string eventCode,
+        string userCode,
+        int quantity,
+        params string[] keyValues)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/events/{eventCode}/reservations")
+        {
+            Content = JsonContent.Create(new ReserveTicketsRequest(userCode, quantity)),
+        };
+        request.Headers.TryAddWithoutValidation(ApiHeaders.IdempotencyKey, keyValues);
+        return client.SendAsync(request, TestContext.Current.CancellationToken);
+    }
+
     public static Task<HttpResponseMessage> PostRawJsonAsync(this HttpClient client, string url, string json) =>
         client.PostAsync(url, new StringContent(json, Encoding.UTF8, "application/json"), TestContext.Current.CancellationToken);
 

@@ -63,8 +63,43 @@ public sealed class IdempotencyTests(FunEventsApiFactory api)
         var response = await _client.ReserveAsync(eventCode, userCode, quantity: 1, new string('k', 65));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.True((await response.ReadValidationErrorsAsync()).TryGetProperty(KeyErrorField, out _));
         Assert.Equal(10, await api.GetAvailableTicketsAsync(eventCode));
     }
+
+    // A key that is sent must be usable: a blank or repeated header is rejected instead of
+    // silently becoming "no key", which would leave the client's retries unprotected.
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("two words")]
+    [InlineData("a1", "b2")]
+    public async Task Reserve_WithBlankRepeatedOrSpacedKey_Returns400AndKeepsInventory(params string[] keyValues)
+    {
+        var eventCode = await api.CreateEventAsync(tickets: 10);
+        var userCode = await api.CreateUserAsync();
+
+        var response = await _client.ReserveWithRawKeyAsync(eventCode, userCode, quantity: 1, keyValues);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.True((await response.ReadValidationErrorsAsync()).TryGetProperty(KeyErrorField, out _));
+        Assert.Equal(10, await api.GetAvailableTicketsAsync(eventCode));
+        Assert.Equal(0, await api.CountReservationsAsync(eventCode));
+    }
+
+    [Fact]
+    public async Task Reserve_WithKeyOf64VisibleCharacters_Returns201()
+    {
+        var eventCode = await api.CreateEventAsync(tickets: 10);
+        var userCode = await api.CreateUserAsync();
+
+        var response = await _client.ReserveAsync(eventCode, userCode, quantity: 1, "~!" + new string('k', 62));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    // Validation errors are keyed by the request member, like UserCode and Quantity.
+    private const string KeyErrorField = "idempotencyKey";
 
     [Fact]
     public async Task Reserve_TwentyConcurrentRequestsWithSameKey_CreateSingleReservation()
