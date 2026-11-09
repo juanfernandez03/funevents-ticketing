@@ -335,13 +335,16 @@ The API tests start PostgreSQL with Testcontainers and host the API in memory wi
 | Suite | Tests | Covers |
 |---|---|---|
 | `EventTests` | 2 | Seeded event with its availability; unknown code → `404` |
-| `ReservationTests` | 13 | Happy path, `Location`, inventory, `400`/`404`/`409` with their codes, malformed JSON, the last tickets, reading back |
+| `ReservationTests` | 20 | Happy path, `Location`, inventory, `400`/`404`/`409` with their codes, one `400` shape for unreadable bodies (missing, malformed, mistyped), `415`, the last tickets, reading back |
 | `OversellingTests` | 2 | 50 concurrent buyers for 10 tickets → exactly 10; 30 buyers of 3 for 10 → exactly 3; every other buyer gets `409` |
-| `IdempotencyTests` | 7 | Replay, `422` on a reused key, key length, no key, 20 concurrent requests with one key → one reservation, also for the last ticket; distinct keys for the last ticket → one `201`, the rest `409` |
+| `IdempotencyTests` | 11 | Replay, `422` on a reused key, key format (blank, spaced, repeated, over 64 → `400`; 64 visible characters → `201`), no key, 20 concurrent requests with one key → one reservation, also for the last ticket; distinct keys for the last ticket → one `201`, the rest `409` |
+| `CommitFailureTests` | 4 | Commit acknowledgement lost after a real commit → the original reservation once, with and without a key |
 | `LookupCacheTests` | 3 | Event or user created after a failed lookup is found; availability is never stale |
-| `ClientOptionsTests` | 14 | Defaults, every option, required and invalid values |
+| `LookupScopeTests` | 2 | A shared cache lookup outlives the request that started it without using its disposed context |
+| `ClientOptionsTests` | 17 | Defaults, every option, required and invalid values, the same key rule as the API |
 | `FunEventsApiClientTests` | 4 | Idempotency header, replay flag, problem responses, URL escaping |
-| `ReservationScenarioTests` | 6 | Exit codes (including a parallel run where nothing is reserved), a new key per request, no reservation for an unknown event, parallel summary |
+| `ProgramTests` | 3 | Ctrl+C stops the run with exit code 130 and stops sending requests; otherwise the scenario exit code is kept |
+| `ReservationScenarioTests` | 11 | Exit codes (including a parallel run where nothing is reserved), a new key per request, no reservation for an unknown event, timeouts and unreadable responses, parallel summary |
 
 CI builds and runs every test on pushes to `main` and on pull requests ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 
