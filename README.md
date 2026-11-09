@@ -176,7 +176,7 @@ The same request with the same key returns the same reservation with `Idempotent
 
 | Status | `code` | When |
 |---|---|---|
-| `400` | none, field errors in `errors` | Missing user code, quantity outside 1–10, idempotency key over 64 characters, malformed JSON |
+| `400` | none; always a validation ProblemDetails with the reasons in `errors` | Missing user code, quantity outside 1–10, an `Idempotency-Key` that is blank, repeated or over 64 characters, and a body that is missing, malformed or mistyped (`errors.body`) |
 | `404` | `event_not_found`, `user_not_found`, `reservation_not_found` | Unknown code or id |
 | `409` | `not_enough_tickets` | Fewer tickets left than requested |
 | `422` | `idempotency_key_reused` | The key was already used for a different request |

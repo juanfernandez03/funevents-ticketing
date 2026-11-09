@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using FunEvents.Api.UseCases.Reservations;
 using FunEvents.Contracts;
 using FunEvents.Contracts.Reservations;
@@ -36,13 +35,12 @@ public static class ReservationEndpoints
     private static async Task<Results<Created<ReservationResponse>, ProblemHttpResult>> ReserveAsync(
         string eventCode,
         ReserveTicketsRequest request,
-        [FromHeader(Name = ApiHeaders.IdempotencyKey), StringLength(ApiHeaders.IdempotencyKeyMaxLength)] string? idempotencyKey,
+        [FromHeader(Name = ApiHeaders.IdempotencyKey), IdempotencyKey] string? idempotencyKey,
         ReserveTickets useCase,
         HttpResponse response,
         CancellationToken cancellationToken)
     {
-        var key = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey;
-        var result = await useCase.ExecuteAsync(eventCode, request, key, cancellationToken);
+        var result = await useCase.ExecuteAsync(eventCode, request, idempotencyKey, cancellationToken);
         if (!result.IsSuccess)
         {
             return result.Error.ToProblem();

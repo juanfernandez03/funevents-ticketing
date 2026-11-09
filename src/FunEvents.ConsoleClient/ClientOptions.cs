@@ -1,3 +1,4 @@
+using FunEvents.Contracts;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 
@@ -57,8 +58,8 @@ public sealed record ClientOptions(
                 case "--user":
                     userCode = value;
                     break;
-                // A blank key would reach the API as no key at all, leaving the client's retries unprotected.
-                case "--idempotency-key" when !string.IsNullOrWhiteSpace(value):
+                // Same rule as the API (shared contract), so the client never sends a key the API rejects.
+                case "--idempotency-key" when ApiHeaders.IsValidIdempotencyKey(value):
                     idempotencyKey = value;
                     break;
                 case "--quantity" when TryParsePositive(value, out quantity):
