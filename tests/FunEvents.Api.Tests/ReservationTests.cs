@@ -76,14 +76,41 @@ public sealed class ReservationTests(FunEventsApiFactory api)
         Assert.True((await response.ReadValidationErrorsAsync()).TryGetProperty("UserCode", out _));
     }
 
-    [Fact]
-    public async Task Reserve_WithMalformedJson_Returns400()
+    // A body the framework cannot read must get the same 400 shape as a validation error:
+    // clients handle one format, with the reason under "errors".
+    [Theory]
+    [InlineData("")]
+    [InlineData("null")]
+    [InlineData("[]")]
+    [InlineData("""{ "userCode": """)]
+    [InlineData("""{ "userCode": "USR-001", "quantity": 1.5 }""")]
+    [InlineData("""{ "userCode": "USR-001", "quantity": 99999999999 }""")]
+    [InlineData("""{ "userCode": "USR-001", "quantity": null }""")]
+    public async Task Reserve_WithUnreadableBody_Returns400ValidationProblemAndKeepsInventory(string body)
     {
         var eventCode = await api.CreateEventAsync(tickets: 5);
 
-        var response = await _client.PostRawJsonAsync($"/events/{eventCode}/reservations", """{ "userCode": """);
+        var response = await _client.PostRawJsonAsync($"/events/{eventCode}/reservations", body);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.True((await response.ReadValidationErrorsAsync()).TryGetProperty("body", out _));
+        Assert.Equal(5, await api.GetAvailableTicketsAsync(eventCode));
+    }
+
+    [Fact]
+    public async Task Reserve_WithNonJsonContentType_Returns415Problem()
+    {
+        var eventCode = await api.CreateEventAsync(tickets: 5);
+
+        var response = await _client.PostAsync(
+            $"/events/{eventCode}/reservations",
+            new StringContent("""{ "userCode": "USR-001", "quantity": 1 }""", System.Text.Encoding.UTF8, "text/plain"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(5, await api.GetAvailableTicketsAsync(eventCode));
     }
 
     [Fact]
