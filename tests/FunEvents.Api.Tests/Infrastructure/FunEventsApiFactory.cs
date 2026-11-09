@@ -53,16 +53,20 @@ public sealed class FunEventsApiFactory : WebApplicationFactory<Program>, IAsync
         await _postgres.DisposeAsync();
     }
 
-    /// <summary>Creates an event that belongs to a single test, so tests never compete for the same inventory.</summary>
-    public async Task<string> CreateEventAsync(int tickets, string? code = null)
+    /// <summary>
+    /// Creates an event that belongs to a single test, so tests never compete for the same inventory.
+    /// It starts in 30 days unless <paramref name="startsIn"/> says otherwise (negative: already started).
+    /// </summary>
+    public async Task<string> CreateEventAsync(int tickets, string? code = null, TimeSpan? startsIn = null)
     {
         code ??= NewEventCode();
         await ExecuteAsync(
             """
             INSERT INTO events (id, code, name, venue, starts_at_utc, total_tickets, available_tickets)
-            VALUES (@id, @code, @name, 'Test venue', now() + interval '30 days', @tickets, @tickets)
+            VALUES (@id, @code, @name, 'Test venue', now() + @startsIn, @tickets, @tickets)
             """,
-            ("id", Guid.CreateVersion7()), ("code", code), ("name", $"Test event {code}"), ("tickets", tickets));
+            ("id", Guid.CreateVersion7()), ("code", code), ("name", $"Test event {code}"), ("tickets", tickets),
+            ("startsIn", startsIn ?? TimeSpan.FromDays(30)));
         return code;
     }
 
