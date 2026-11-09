@@ -19,6 +19,7 @@ The property everything is built around: **tickets are never oversold**, not eve
 - [Quick start](#quick-start)
 - [Part 1: architecture in one page](#part-1-architecture-in-one-page)
 - [Part 2: the prototype](#part-2-the-prototype)
+  - [The minimum, and what goes beyond it](#the-minimum-and-what-goes-beyond-it)
   - [API](#api)
   - [Console client](#console-client)
   - [How a reservation works](#how-a-reservation-works)
@@ -136,6 +137,25 @@ flowchart LR
     api -. OpenTelemetry .-> dashboard[Aspire dashboard]
     client -. OpenTelemetry .-> dashboard
 ```
+
+### The minimum, and what goes beyond it
+
+The brief asks for a minimal prototype: a console client that reserves tickets for a known event and user through a web API. That minimum is:
+
+- `POST /events/{eventCode}/reservations` (`ReserveTickets`): one conditional `UPDATE` decrements the inventory and the reservation is inserted in the same transaction; two `GET` endpoints read the result.
+- PostgreSQL with the schema, its constraints and seed data.
+- The console client: `--event`, `--user`, `--quantity`.
+
+Everything else answers a concrete risk of a ticketing system, and none of it changes the reservation rule above:
+
+| Beyond the minimum | Why it is there |
+|---|---|
+| `Idempotency-Key` | Clients and partners retry on timeouts; without a key, a retry reserves twice ([ADR-0003](docs/adr/0003-idempotency-keys.md)) |
+| Commit check after a lost acknowledgement | The API retries too (EF Core connection resiliency); without the check, one request could reserve twice |
+| Cached code lookups | Two fewer queries per reservation, and an explicit line between what can be cached (codes) and what cannot (availability) ([ADR-0007](docs/adr/0007-hybridcache-for-reference-data.md)) |
+| Aspire AppHost and the client scenarios | One command runs the database, the API and the 50-buyers-for-10-tickets demo, with traces in the dashboard |
+| `--parallel` in the client | Shows the no-overselling guarantee from the console |
+| Integration tests on a real PostgreSQL | Row locks, transactions and unique indexes only exist in a real database |
 
 ### API
 
@@ -421,6 +441,8 @@ Analysis first, then code test first. Each behaviour starts as a failing test (r
 | 8 | `test(client)` red → `feat(client)` green, twice | Option parsing, then the typed API client and the scenarios, against a stub of the API |
 | 9 | `feat(apphost)` | `client-reserve` and `client-rush` in the dashboard |
 | 10 | `ci:` `docs:` | GitHub Actions; this README |
+| 11 | `test` red → `fix` green, several | Review round: same-key requests that find the event sold out replay the winner; a lost commit acknowledgement is verified instead of retried blindly; cached lookups run in their own scope; the client rejects blank keys and non-http(s) URLs, reports timeouts, and stops on Ctrl+C with exit code 130 |
+| 12 | `test` red → `fix` green, `refactor` | Consistency round: one `400` shape for every invalid request, one `Idempotency-Key` rule shared by the API and the client, cached lookups moved out of `ReserveTickets`, and no sales once an event has started |
 
 ## References
 
