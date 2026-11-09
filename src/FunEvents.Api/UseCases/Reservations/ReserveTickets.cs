@@ -121,8 +121,12 @@ public sealed partial class ReserveTickets(
 
         // Check-and-decrement in a single statement. PostgreSQL locks the row and re-evaluates the
         // WHERE clause after the lock, so concurrent buyers can never push the counter below zero.
+        // Sales close when the event starts.
+        var now = reservation.CreatedAtUtc;
         var updatedRows = await db.Events
-            .Where(e => e.Id == reservation.EventId && e.AvailableTickets >= reservation.Quantity)
+            .Where(e => e.Id == reservation.EventId
+                && e.StartsAtUtc > now
+                && e.AvailableTickets >= reservation.Quantity)
             .ExecuteUpdateAsync(
                 setters => setters.SetProperty(e => e.AvailableTickets, e => e.AvailableTickets - reservation.Quantity),
                 cancellationToken);
@@ -131,6 +135,14 @@ public sealed partial class ReserveTickets(
         {
             // ExecuteInTransactionAsync commits on return, but zero updated rows means there
             // are no changes to commit: no inventory decrement and no reservation insert.
+            // Only this failure path pays one more query, to tell the client why.
+            var hasStarted = await db.Events.AnyAsync(e => e.Id == reservation.EventId && e.StartsAtUtc <= now, cancellationToken);
+            if (hasStarted)
+            {
+                LogEventStarted(eventCode);
+                return ReservationErrors.EventStarted(eventCode);
+            }
+
             LogNotEnoughTickets(eventCode, reservation.Quantity);
             return ReservationErrors.NotEnoughTickets(eventCode, reservation.Quantity);
         }
@@ -178,6 +190,9 @@ public sealed partial class ReserveTickets(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Rejected: {EventCode} does not have {Quantity} ticket(s) available")]
     private partial void LogNotEnoughTickets(string eventCode, int quantity);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Rejected: {EventCode} has already started")]
+    private partial void LogEventStarted(string eventCode);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Replayed reservation {ReservationId} for idempotency key {IdempotencyKey}")]
     private partial void LogReplayed(Guid reservationId, string idempotencyKey);
