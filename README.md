@@ -178,7 +178,7 @@ The same request with the same key returns the same reservation with `Idempotent
 |---|---|---|
 | `400` | none; always a validation ProblemDetails with the reasons in `errors` | Missing user code, quantity outside 1–10, an `Idempotency-Key` that is blank, repeated or over 64 characters, and a body that is missing, malformed or mistyped (`errors.body`) |
 | `404` | `event_not_found`, `user_not_found`, `reservation_not_found` | Unknown code or id |
-| `409` | `not_enough_tickets` | Fewer tickets left than requested |
+| `409` | `not_enough_tickets`, `event_started` | Fewer tickets left than requested; the event has already started (sales close at the start time) |
 | `422` | `idempotency_key_reused` | The key was already used for a different request |
 
 ```json
@@ -261,9 +261,9 @@ sequenceDiagram
     u->>db: reservation with this key? → replay it
     u->>h: event and user ids by code (misses go to the database, never cached) → 404
     u->>db: BEGIN
-    u->>db: UPDATE events SET available = available - n<br/>WHERE id = :id AND available >= n
+    u->>db: UPDATE events SET available = available - n<br/>WHERE id = :id AND starts_at > now AND available >= n
     alt 0 rows updated
-        u-->>e: not_enough_tickets → 409
+        u-->>e: event_started or not_enough_tickets → 409
     else 1 row updated
         u->>db: INSERT reservation (unique idempotency key)
         u->>db: COMMIT
@@ -274,28 +274,44 @@ sequenceDiagram
 The heart of it, in [`ReserveTickets.cs`](src/FunEvents.Api/UseCases/Reservations/ReserveTickets.cs):
 
 ```csharp
-await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-
+// Inside ExecuteInTransactionAsync: one transaction, retried as a whole on transient failures.
 // Check-and-decrement in a single statement. PostgreSQL locks the row and re-evaluates the
 // WHERE clause after the lock, so concurrent buyers can never push the counter below zero.
+// Sales close when the event starts.
+var now = reservation.CreatedAtUtc;
 var updatedRows = await db.Events
-    .Where(e => e.Id == targetEvent.Id && e.AvailableTickets >= quantity)
+    .Where(e => e.Id == reservation.EventId
+        && e.StartsAtUtc > now
+        && e.AvailableTickets >= reservation.Quantity)
     .ExecuteUpdateAsync(
-        setters => setters.SetProperty(e => e.AvailableTickets, e => e.AvailableTickets - quantity),
+        setters => setters.SetProperty(e => e.AvailableTickets, e => e.AvailableTickets - reservation.Quantity),
         cancellationToken);
 
 if (updatedRows == 0)
 {
-    LogNotEnoughTickets(targetEvent.Code, quantity);
-    return ReservationErrors.NotEnoughTickets(targetEvent.Code, quantity);
+    // ExecuteInTransactionAsync commits on return, but zero updated rows means there
+    // are no changes to commit: no inventory decrement and no reservation insert.
+    // Only this failure path pays one more query, to tell the client why.
+    var hasStarted = await db.Events.AnyAsync(e => e.Id == reservation.EventId && e.StartsAtUtc <= now, cancellationToken);
+    if (hasStarted)
+    {
+        LogEventStarted(eventCode);
+        return ReservationErrors.EventStarted(eventCode);
+    }
+
+    LogNotEnoughTickets(eventCode, reservation.Quantity);
+    return ReservationErrors.NotEnoughTickets(eventCode, reservation.Quantity);
 }
+
+db.Reservations.Add(reservation);
+await db.SaveChangesAsync(acceptAllChangesOnSuccess: false, cancellationToken);
 ```
 
 - **Why not read, check and write?** Two requests both read "1 left" and both sell it. The history has the test that proves it: with the naive version, 50 buyers for 10 tickets all got a `201`.
 - **Why not optimistic concurrency?** It is correct, but under contention most requests fail and retry. The conditional update needs no retry loop.
 - **Safety net:** `CHECK (available_tickets >= 0 AND available_tickets <= total_tickets)` in the schema.
 - **Idempotency races:** when two requests with the same key arrive together, the unique index lets one commit; the other's transaction rolls back, decrement included, and it replays the winner's reservation.
-- **Retries:** the Aspire EF Core integration enables connection retries, so the transaction runs inside the EF execution strategy and is retried as a whole.
+- **Retries:** the Aspire EF Core integration enables connection retries, so the transaction runs inside the EF execution strategy and is retried as a whole. If a commit succeeds but its acknowledgement is lost, the strategy checks whether the reservation exists before retrying, so one request never reserves twice.
 - **Cache:** only the code → id lookups are cached, because codes never change. Availability is never cached, and a miss is removed at once so an event created a second later is found. In-memory now; Redis plugs in as the second level without touching this code ([ADR-0007](docs/adr/0007-hybridcache-for-reference-data.md)).
 
 ### Project structure
@@ -335,7 +351,7 @@ The API tests start PostgreSQL with Testcontainers and host the API in memory wi
 | Suite | Tests | Covers |
 |---|---|---|
 | `EventTests` | 2 | Seeded event with its availability; unknown code → `404` |
-| `ReservationTests` | 20 | Happy path, `Location`, inventory, `400`/`404`/`409` with their codes, one `400` shape for unreadable bodies (missing, malformed, mistyped), `415`, the last tickets, reading back |
+| `ReservationTests` | 22 | Happy path, `Location`, inventory, `400`/`404`/`409` with their codes, no sales once the event has started, one `400` shape for unreadable bodies (missing, malformed, mistyped), `415`, the last tickets, reading back |
 | `OversellingTests` | 2 | 50 concurrent buyers for 10 tickets → exactly 10; 30 buyers of 3 for 10 → exactly 3; every other buyer gets `409` |
 | `IdempotencyTests` | 11 | Replay, `422` on a reused key, key format (blank, spaced, repeated, over 64 → `400`; 64 visible characters → `201`), no key, 20 concurrent requests with one key → one reservation, also for the last ticket; distinct keys for the last ticket → one `201`, the rest `409` |
 | `CommitFailureTests` | 4 | Commit acknowledgement lost after a real commit → the original reservation once, with and without a key |

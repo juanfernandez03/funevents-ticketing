@@ -264,6 +264,7 @@ Integration tests: the API hosted in memory with `WebApplicationFactory`, Postgr
 | 19 | Reserve for an unknown event, create it, reserve again | `404` then `201`: a cache miss is not remembered |
 | 20 | Same for an unknown user | `404` then `201` |
 | 21 | Event availability right after a reservation | always current: availability is never cached |
+| 22 | Reserve for an event that already started | `409 event_started`, inventory unchanged, also when it is sold out |
 
 Tests 16 to 18 are the ones to show in the review: they prove the guarantees, not just the happy path.
 

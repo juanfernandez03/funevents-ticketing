@@ -10,6 +10,9 @@ public static class ReservationErrors
     public static Error NotEnoughTickets(string eventCode, int requested) =>
         Error.Conflict("not_enough_tickets", $"Event '{eventCode}' does not have {requested} ticket(s) available.");
 
+    public static Error EventStarted(string eventCode) =>
+        Error.Conflict("event_started", $"Event '{eventCode}' has already started; its tickets can no longer be reserved.");
+
     public static Error NotFound(Guid reservationId) =>
         Error.NotFound("reservation_not_found", $"Reservation '{reservationId}' does not exist.");
 
