@@ -69,8 +69,8 @@ public sealed class IdempotencyTests(FunEventsApiFactory api)
 
     // A key that is sent must be usable: a blank or repeated header is rejected instead of
     // silently becoming "no key", which would leave the client's retries unprotected.
+    // HttpClient does not send an empty header value, so whitespace covers the blank case.
     [Theory]
-    [InlineData("")]
     [InlineData("   ")]
     [InlineData("two words")]
     [InlineData("a1", "b2")]
