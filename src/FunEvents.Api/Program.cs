@@ -14,8 +14,9 @@ builder.Services.AddValidation();
 builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
 
-// Malformed JSON is the client's fault: answer 400 in every environment instead of throwing.
-builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = false);
+// A body that cannot be bound throws in every environment and becomes the same 400 shape as a validation error.
+builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = true);
+builder.Services.AddExceptionHandler<BadRequestExceptionHandler>();
 
 var app = builder.Build();
 

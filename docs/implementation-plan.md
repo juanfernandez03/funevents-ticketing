@@ -99,7 +99,7 @@ RFC 9457 ProblemDetails, plus a machine-readable `code` extension:
 }
 ```
 
-Validation errors (`400`) come from the framework with an `errors` dictionary per field. Malformed JSON must also be `400`, never `500`.
+Every `400` has one shape: a validation ProblemDetails with an `errors` dictionary. Field rules come from the framework's validation; a body it cannot read (missing, malformed, wrong types) is reported under `errors.body` by `BadRequestExceptionHandler`, never as `500`.
 
 ### Idempotency rules ([ADR-0003](adr/0003-idempotency-keys.md))
 
@@ -248,7 +248,7 @@ Integration tests: the API hosted in memory with `WebApplicationFactory`, Postgr
 | 3 | Unknown user | `404 user_not_found`, inventory unchanged |
 | 4 | Quantity 0, −1, 11 | `400` with a `Quantity` error, inventory unchanged |
 | 5 | Missing user code | `400` with a `UserCode` error |
-| 6 | Malformed JSON | `400` |
+| 6 | Missing, malformed or mistyped body | `400` with `errors.body`, same shape as test 4 |
 | 7 | Ask for 3 when 2 are left | `409 not_enough_tickets`, still 2 left |
 | 8 | Take the last 4 of 4 | `201`, 0 left |
 | 9 | Read back a reservation | `200`, identical to the `201` body |
@@ -299,7 +299,7 @@ Things that are easy to get wrong with this exact stack:
 |---|---|---|
 | Explicit transaction with Aspire's EF integration | Aspire enables EF Core retries, and `BeginTransaction` then throws "the execution strategy does not support user-initiated transactions" | Run the transaction inside `db.Database.CreateExecutionStrategy().ExecuteAsync(...)` and clear the change tracker at the start of each attempt |
 | Timestamp precision | .NET has 100 ns ticks, PostgreSQL stores microseconds: the `201` body and the value read back differ | Truncate `now` to microseconds before saving |
-| Malformed JSON in Development | `ThrowOnBadRequest` is on in Development, so with `UseExceptionHandler` a bad body becomes `500` | `Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = false)` |
+| Unreadable body | With `ThrowOnBadRequest` on and only `UseExceptionHandler`, a bad body becomes `500`; with it off, the `400` has no `errors` and differs from validation errors | `ThrowOnBadRequest = true` in every environment plus an `IExceptionHandler` that turns `BadHttpRequestException` into the validation ProblemDetails shape |
 | Tests starting the server lazily | Parallel test classes can start the host twice and run the seeding twice (duplicate key on the event code) | Start the server once in the fixture's `InitializeAsync` |
 | xUnit v3 with .NET 10 SDK | VSTest is no longer supported for Microsoft.Testing.Platform-based test projects | Add `"test": { "runner": "Microsoft.Testing.Platform" }` to `global.json` |
 | Mixed EF Core versions | Aspire pulls one EF Core patch, `Microsoft.EntityFrameworkCore.Design` another: MSB3277 warnings, errors with warnings-as-errors | `CentralPackageTransitivePinningEnabled` + pin `Microsoft.EntityFrameworkCore.Relational` |
