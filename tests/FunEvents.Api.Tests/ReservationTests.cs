@@ -129,6 +129,33 @@ public sealed class ReservationTests(FunEventsApiFactory api)
     }
 
     [Fact]
+    public async Task Reserve_ForEventThatAlreadyStarted_Returns409EventStartedAndKeepsInventory()
+    {
+        var eventCode = await api.CreateEventAsync(tickets: 5, startsIn: TimeSpan.FromHours(-1));
+        var userCode = await api.CreateUserAsync();
+
+        var response = await _client.ReserveAsync(eventCode, userCode, quantity: 1);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("event_started", await response.ReadProblemCodeAsync());
+        Assert.Equal(5, await api.GetAvailableTicketsAsync(eventCode));
+        Assert.Equal(0, await api.CountReservationsAsync(eventCode));
+    }
+
+    [Fact]
+    public async Task Reserve_ForStartedEventWithNoTicketsLeft_ReportsEventStarted()
+    {
+        // The more fundamental reason wins: no amount of tickets makes a started event reservable.
+        var eventCode = await api.CreateEventAsync(tickets: 0, startsIn: TimeSpan.FromHours(-1));
+        var userCode = await api.CreateUserAsync();
+
+        var response = await _client.ReserveAsync(eventCode, userCode, quantity: 1);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("event_started", await response.ReadProblemCodeAsync());
+    }
+
+    [Fact]
     public async Task Reserve_LastAvailableTickets_Returns201AndLeavesZero()
     {
         var eventCode = await api.CreateEventAsync(tickets: 4);
