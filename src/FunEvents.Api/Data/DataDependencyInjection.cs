@@ -15,6 +15,11 @@ public static class DataDependencyInjection
             .UseSeeding(SeedData.Seed)
             .UseAsyncSeeding(SeedData.SeedAsync));
 
+        // In-memory only. Registering a distributed cache (e.g. Redis) makes it the second level, no code change.
+        builder.Services.AddHybridCache();
+        // Singleton: it opens its own scope per lookup, so it never holds a request's DbContext.
+        builder.Services.AddSingleton<CodeLookup>();
+
         return builder;
     }
 
