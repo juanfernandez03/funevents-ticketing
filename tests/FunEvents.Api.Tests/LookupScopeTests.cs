@@ -1,4 +1,5 @@
 using FunEvents.Api.Common;
+using FunEvents.Api.Data;
 using FunEvents.Api.Tests.Infrastructure;
 using FunEvents.Api.UseCases.Reservations;
 using FunEvents.Contracts.Reservations;
@@ -21,7 +22,8 @@ public sealed class LookupScopeTests(FunEventsApiFactory api)
         Task<Result<ReservationOutcome>> pending;
         try
         {
-            var command = ActivatorUtilities.CreateInstance<ReserveTickets>(scope.ServiceProvider, cache);
+            var codes = ActivatorUtilities.CreateInstance<CodeLookup>(scope.ServiceProvider, cache);
+            var command = ActivatorUtilities.CreateInstance<ReserveTickets>(scope.ServiceProvider, codes);
             pending = command.ExecuteAsync(eventCode,
                 new ReserveTicketsRequest(userCode, 1), null,
                 TestContext.Current.CancellationToken);

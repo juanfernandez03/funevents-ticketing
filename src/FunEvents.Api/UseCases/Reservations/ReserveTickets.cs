@@ -1,11 +1,9 @@
-using System.ComponentModel;
 using FunEvents.Api.Common;
 using FunEvents.Api.Data;
 using FunEvents.Api.Data.Entities;
 using FunEvents.Api.UseCases.Events;
 using FunEvents.Contracts.Reservations;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Hybrid;
 using Npgsql;
 
 namespace FunEvents.Api.UseCases.Reservations;
@@ -17,15 +15,11 @@ public sealed record ReservationOutcome(ReservationResponse Reservation, bool Is
 /// <summary>Command: takes tickets from an event's inventory for a user, without ever overselling.</summary>
 public sealed partial class ReserveTickets(
     FunEventsDbContext db,
-    HybridCache cache,
-    IServiceScopeFactory scopeFactory,
+    CodeLookup codes,
     TimeProvider clock,
     ILogger<ReserveTickets> logger)
 {
     private const string IdempotencyKeyIndex = "ix_reservations_idempotency_key";
-
-    // Codes never change once created, so their ids can be cached. Availability is never cached.
-    private static readonly HybridCacheEntryOptions LookupCacheOptions = new() { Expiration = TimeSpan.FromMinutes(10) };
 
     public async Task<Result<ReservationOutcome>> ExecuteAsync(
         string eventCode,
@@ -42,13 +36,13 @@ public sealed partial class ReserveTickets(
             }
         }
 
-        var targetEvent = await FindEventAsync(eventCode, cancellationToken);
+        var targetEvent = await codes.FindEventAsync(eventCode, cancellationToken);
         if (targetEvent is null)
         {
             return EventErrors.NotFound(eventCode);
         }
 
-        var buyer = await FindUserAsync(request.UserCode, cancellationToken);
+        var buyer = await codes.FindUserAsync(request.UserCode, cancellationToken);
         if (buyer is null)
         {
             return ReservationErrors.UserNotFound(request.UserCode);
@@ -146,48 +140,6 @@ public sealed partial class ReserveTickets(
         return outcome;
     }
 
-    private Task<CodeReference?> FindEventAsync(string eventCode, CancellationToken cancellationToken) =>
-        GetCachedLookupAsync($"event-id:{eventCode}", (lookupDb, ct) => lookupDb.Events
-            .AsNoTracking()
-            .Where(e => e.Code == eventCode)
-            .Select(e => new CodeReference(e.Id, e.Code))
-            .SingleOrDefaultAsync(ct), cancellationToken);
-
-    private Task<CodeReference?> FindUserAsync(string userCode, CancellationToken cancellationToken) =>
-        GetCachedLookupAsync($"user-id:{userCode}", (lookupDb, ct) => lookupDb.Users
-            .AsNoTracking()
-            .Where(u => u.Code == userCode)
-            .Select(u => new CodeReference(u.Id, u.Code))
-            .SingleOrDefaultAsync(ct), cancellationToken);
-
-    private async Task<CodeReference?> GetCachedLookupAsync(
-        string key,
-        Func<FunEventsDbContext, CancellationToken, Task<CodeReference?>> lookup,
-        CancellationToken cancellationToken)
-    {
-        var reference = await cache.GetOrCreateAsync(
-            key,
-            (scopeFactory, lookup),
-            static async (state, ct) =>
-            {
-                // HybridCache shares factory work across callers; its context must outlive any one request.
-                // Own the scope here so cancellation/disposal of the initiating request cannot dispose it.
-                await using var scope = state.scopeFactory.CreateAsyncScope();
-                var lookupDb = scope.ServiceProvider.GetRequiredService<FunEventsDbContext>();
-                return await state.lookup(lookupDb, ct);
-            },
-            LookupCacheOptions,
-            cancellationToken: cancellationToken);
-
-        // Never keep a miss: the event or user may be created a second later.
-        if (reference is null)
-        {
-            await cache.RemoveAsync(key, cancellationToken);
-        }
-
-        return reference;
-    }
-
     private Task<ReservationResponse?> FindByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken) =>
         db.Reservations
             .AsNoTracking()
@@ -220,10 +172,6 @@ public sealed partial class ReserveTickets(
             SqlState: PostgresErrorCodes.UniqueViolation,
             ConstraintName: IdempotencyKeyIndex,
         };
-
-    /// <summary>Internal id and public code of an event or a user. Immutable, so the cache can share instances.</summary>
-    [ImmutableObject(true)]
-    public sealed record CodeReference(Guid Id, string Code);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Reservation {ReservationId}: {Quantity} ticket(s) for {EventCode} reserved by {UserCode}")]
     private partial void LogReserved(Guid reservationId, int quantity, string eventCode, string userCode);
