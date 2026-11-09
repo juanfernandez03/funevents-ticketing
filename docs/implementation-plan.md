@@ -11,7 +11,6 @@ The prototype is a console client that reserves tickets for a known event and us
 - [7. Test plan](#7-test-plan)
 - [8. Build order](#8-build-order)
 - [9. Pitfalls to watch for](#9-pitfalls-to-watch-for)
-- [10. Ready for the live change](#10-ready-for-the-live-change)
 
 ---
 
@@ -100,7 +99,7 @@ RFC 9457 ProblemDetails, plus a machine-readable `code` extension:
 }
 ```
 
-Validation errors (`400`) come from the framework with an `errors` dictionary per field. Malformed JSON must also be `400`, never `500`.
+Every `400` has one shape: a validation ProblemDetails with an `errors` dictionary. Field rules come from the framework's validation; a body it cannot read (missing, malformed, wrong types) is reported under `errors.body` by `BadRequestExceptionHandler`, never as `500`.
 
 ### Idempotency rules ([ADR-0003](adr/0003-idempotency-keys.md))
 
@@ -249,7 +248,7 @@ Integration tests: the API hosted in memory with `WebApplicationFactory`, Postgr
 | 3 | Unknown user | `404 user_not_found`, inventory unchanged |
 | 4 | Quantity 0, −1, 11 | `400` with a `Quantity` error, inventory unchanged |
 | 5 | Missing user code | `400` with a `UserCode` error |
-| 6 | Malformed JSON | `400` |
+| 6 | Missing, malformed or mistyped body | `400` with `errors.body`, same shape as test 4 |
 | 7 | Ask for 3 when 2 are left | `409 not_enough_tickets`, still 2 left |
 | 8 | Take the last 4 of 4 | `201`, 0 left |
 | 9 | Read back a reservation | `200`, identical to the `201` body |
@@ -263,26 +262,31 @@ Integration tests: the API hosted in memory with `WebApplicationFactory`, Postgr
 | 17 | **50 concurrent buyers, 10 tickets** | exactly 10 × `201`, 40 × `409`, 0 left, 10 reserved |
 | 18 | **30 concurrent buyers of 3, 10 tickets** | exactly 3 × `201`, 1 left |
 | 19 | Reserve for an unknown event, create it, reserve again | `404` then `201`: a cache miss is not remembered |
+| 20 | Same for an unknown user | `404` then `201` |
+| 21 | Event availability right after a reservation | always current: availability is never cached |
+| 22 | Reserve for an event that already started | `409 event_started`, inventory unchanged, also when it is sold out |
 
 Tests 16 to 18 are the ones to show in the review: they prove the guarantees, not just the happy path.
+
+The console client has its own unit tests, with a stub `HttpMessageHandler` instead of the API (no Docker): option parsing, the `Idempotency-Key` and `Idempotent-Replayed` headers, reading problem responses, exit codes, a fresh key per request, and the summary of a parallel run.
 
 ---
 
 ## 8. Build order
 
-Each step is one commit that builds and runs, so the history tells the story.
+Test first: each behaviour starts as a failing test (red) and is then made to pass with the smallest change (green). Every commit builds, so the history tells the story.
 
 | # | Commit | Done when |
 |---|---|---|
 | 1 | `chore:` solution, `global.json`, shared props, Central Package Management | `dotnet build` passes on an empty solution |
 | 2 | `feat:` AppHost + ServiceDefaults + empty API waiting for PostgreSQL | `dotnet run --project src/FunEvents.AppHost` shows a healthy `api` |
-| 3 | `feat(data):` entities, `DbContext`, constraints, migration, seed | the three events exist after startup |
-| 4 | `feat(reservations):` `ReserveTickets`, `GetEvent`, `GetReservation`, `Result<T>`, contracts | use cases compile and are registered |
-| 5 | `feat(api):` endpoints, `AddValidation`, ProblemDetails, OpenAPI + Scalar | `curl` covers 201 / 400 / 404 / 409 |
-| 6 | `feat(reservations):` `Idempotency-Key` | replay, 422 and same-key race behave as in §3 |
-| 7 | `perf(reservations):` HybridCache for event and user lookups | two fewer queries per reservation; misses not cached |
-| 8 | `feat(client):` console client + AppHost scenarios | `client-rush` prints 10 created / 40 conflicts |
-| 9 | `test:` integration tests from §7 | `dotnet test` green, several runs in a row |
+| 3 | `test(events):` red, then `feat(events):` green | test infrastructure (Testcontainers + `WebApplicationFactory`); `GET /events/{code}` from PostgreSQL |
+| 4 | `test(reservations):` red, then `feat(reservations):` green | tests 1 to 11 pass with the simplest read-check-write |
+| 5 | `test(reservations):` red, then `fix(reservations):` green | tests 17 and 18 prove the naive version oversells; the atomic conditional update fixes it |
+| 6 | `test(reservations):` red, then `feat(reservations):` green | `Idempotency-Key`: tests 12 to 16 |
+| 7 | `test(reservations):` guard, then `perf(reservations):` HybridCache | tests 19 to 21 pass before and after; two fewer queries per reservation |
+| 8 | `test(client):` red, then `feat(client):` green, twice | options first, then the API client and the scenarios |
+| 9 | `feat(apphost):` client scenarios | `client-rush` prints 10 created / 40 conflicts |
 | 10 | `ci:` GitHub Actions build + test | green badge |
 | 11 | `docs:` README: run instructions, sample output | someone else can clone and run it |
 
@@ -296,7 +300,7 @@ Things that are easy to get wrong with this exact stack:
 |---|---|---|
 | Explicit transaction with Aspire's EF integration | Aspire enables EF Core retries, and `BeginTransaction` then throws "the execution strategy does not support user-initiated transactions" | Run the transaction inside `db.Database.CreateExecutionStrategy().ExecuteAsync(...)` and clear the change tracker at the start of each attempt |
 | Timestamp precision | .NET has 100 ns ticks, PostgreSQL stores microseconds: the `201` body and the value read back differ | Truncate `now` to microseconds before saving |
-| Malformed JSON in Development | `ThrowOnBadRequest` is on in Development, so with `UseExceptionHandler` a bad body becomes `500` | `Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = false)` |
+| Unreadable body | With `ThrowOnBadRequest` on and only `UseExceptionHandler`, a bad body becomes `500`; with it off, the `400` has no `errors` and differs from validation errors | `ThrowOnBadRequest = true` in every environment plus an `IExceptionHandler` that turns `BadHttpRequestException` into the validation ProblemDetails shape |
 | Tests starting the server lazily | Parallel test classes can start the host twice and run the seeding twice (duplicate key on the event code) | Start the server once in the fixture's `InitializeAsync` |
 | xUnit v3 with .NET 10 SDK | VSTest is no longer supported for Microsoft.Testing.Platform-based test projects | Add `"test": { "runner": "Microsoft.Testing.Platform" }` to `global.json` |
 | Mixed EF Core versions | Aspire pulls one EF Core patch, `Microsoft.EntityFrameworkCore.Design` another: MSB3277 warnings, errors with warnings-as-errors | `CentralPackageTransitivePinningEnabled` + pin `Microsoft.EntityFrameworkCore.Relational` |
@@ -309,19 +313,3 @@ Things that are easy to get wrong with this exact stack:
 | Caching availability | A cached counter shows tickets that are gone, and if it were ever used for the decision it would oversell | Never cache availability; the `UPDATE` decides |
 | HybridCache with warnings as errors | Some HybridCache APIs may be flagged as experimental (`EXTEXP` diagnostics) | Suppress the specific diagnostic where it is used, with a comment |
 | Validation in another assembly | Worth checking that `AddValidation` picks up DataAnnotations on records in `FunEvents.Contracts` | It does on .NET 10; types must be public |
-
----
-
-## 10. Ready for the live change
-
-The review includes a small change made live. The likely ones and where they land:
-
-| Change | Where | Notes |
-|---|---|---|
-| Cancel a reservation | new `CancelReservation` use case + `DELETE /reservations/{id}` | Mirror of the reserve: `UPDATE ... SET available = available + n WHERE available + n <= total`; mark the reservation cancelled in the same transaction |
-| Max tickets per user per event | `ReserveTickets` | Sum the user's quantity for the event inside the transaction; new `409` code |
-| Holds that expire | `ReservationEntity` (`Status`, `ExpiresAtUtc`) + a `BackgroundService` | Sweeper returns expired holds with the same conditional update |
-| List a user's reservations | new `GetUserReservations` use case + `GET /users/{code}/reservations` | Read-only projection |
-| Change the per-request limit | `ReservationLimits.MaxTicketsPerReservation` | Validation picks it up; add a test |
-
-Practise one of them before the review, on your own machine, from a clean clone.

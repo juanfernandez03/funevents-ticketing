@@ -33,5 +33,6 @@ In EF Core this is `ExecuteUpdateAsync` with a `Where` filter, wrapped in the co
 
 - PostgreSQL serialises the competing updates on the row lock and re-evaluates the `WHERE` clause after acquiring it, so the counter can never go negative.
 - One round trip for the check-and-write, no retry loop.
+- Use EF Core's [`ExecuteInTransactionAsync` / `verifySucceeded` pattern](https://learn.microsoft.com/ef/core/miscellaneous/connection-resiliency#option-3---add-state-verification) with a reservation UUIDv7 and timestamp generated once per request: after an ambiguous commit, check that reservation id before retrying, even without an idempotency key.
 - A single row per event becomes a hot spot for extreme on-sales. The mitigation (inventory pools per section or channel) keeps the same statement.
 - An integration test must fire many concurrent reservations at an event with few tickets and assert that exactly the available number succeed.

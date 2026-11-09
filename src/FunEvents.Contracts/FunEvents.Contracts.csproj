@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Request and response DTOs shared by the API and its clients. No dependencies on purpose. -->
+
+</Project>

@@ -18,7 +18,7 @@ Not everything can be cached:
 
 ## Decision
 
-- Use **HybridCache** (`Microsoft.Extensions.Caching.Hybrid`, generally available since .NET 9) for the two lookups in `ReserveTickets`, with a 10-minute expiration.
+- Use **HybridCache** (`Microsoft.Extensions.Caching.Hybrid`, generally available since .NET 9) for the two code lookups, kept in `Data/CodeLookup` and used by `ReserveTickets`, with a 10-minute expiration.
 - In the prototype it runs **in-memory only** (L1, per process).
 - **In production, add Redis as the second level (L2)** by registering a distributed cache (Aspire: `AddRedis` in the AppHost, `AddRedisDistributedCache` in the API). HybridCache picks it up automatically, so the use case code does not change.
 - **Never cache a miss.** If the lookup returns nothing, the entry is removed right away; otherwise an event created a minute later would stay "not found" until the entry expires.
@@ -38,6 +38,7 @@ Not everything can be cached:
 ## Consequences
 
 - Two fewer queries per reservation on hot events.
+- Each lookup factory owns an async DI scope and its database context, so shared cache work does not depend on the initiating request's lifetime; the reservation transaction still uses the request context.
 - Codes are treated as immutable. Renaming an event code would need an explicit cache removal.
 - With warnings as errors, check whether the build flags any HybridCache API as experimental (`EXTEXP` diagnostics) and suppress it explicitly where used.
 - A test must prove that a miss is not cached: reserve for an unknown event (404), create it, reserve again (201).

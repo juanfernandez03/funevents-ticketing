@@ -1,0 +1,11 @@
+[*.cs]
+# Test names read as sentences: Reserve_WhenEventIsSoldOut_Returns409.
+dotnet_diagnostic.CA1707.severity = none
+# xUnit runs tests without a synchronization context.
+dotnet_diagnostic.CA2007.severity = none
+# HttpClient instances come from the test server factory.
+dotnet_diagnostic.CA2000.severity = none
+# Test URLs are plain strings on purpose.
+dotnet_diagnostic.CA2234.severity = none
+dotnet_diagnostic.CA1054.severity = none
+dotnet_diagnostic.CA1056.severity = none
