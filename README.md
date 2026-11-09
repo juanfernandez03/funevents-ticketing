@@ -252,11 +252,11 @@ sequenceDiagram
     participant c as Client
     participant e as Endpoint
     participant u as ReserveTickets
-    participant h as HybridCache
+    participant h as CodeLookup (HybridCache)
     participant db as PostgreSQL
 
     c->>e: POST /events/{code}/reservations
-    e->>e: validate the contract (AddValidation) → 400
+    e->>e: bind and validate (AddValidation, BadRequestExceptionHandler) → 400
     e->>u: ExecuteAsync(eventCode, request, idempotencyKey)
     u->>db: reservation with this key? → replay it
     u->>h: event and user ids by code (misses go to the database, never cached) → 404
@@ -306,9 +306,9 @@ src/
 ├── FunEvents.ServiceDefaults/   OpenTelemetry, health checks, service discovery, resilience
 ├── FunEvents.Contracts/         Request/response DTOs and limits shared by the API and the client
 ├── FunEvents.Api/
-│   ├── Endpoints/               Entry point: routing, binding, Result → HTTP (ProblemDetails)
+│   ├── Endpoints/               Entry point: routing, binding, Result → HTTP (ProblemDetails), one 400 shape
 │   ├── UseCases/                One class per action: ReserveTickets, GetReservation, GetEvent
-│   ├── Data/                    DbContext, entities, migrations, seed data
+│   ├── Data/                    DbContext, entities, migrations, seed data, cached code lookups
 │   ├── Common/                  Result<T> and Error
 │   └── Program.cs
 └── FunEvents.ConsoleClient/     Options, typed HttpClient, reservation scenarios
@@ -321,7 +321,7 @@ docs/
 └── adr/                         Architecture decision records
 ```
 
-The API follows the **Core-Driven** approach (Iván Abad, NetMentor): endpoints only translate HTTP, use cases hold the rules and inject what they need directly (the `DbContext` is already a unit of work), and infrastructure lives apart. No MediatR, no repository over EF Core, no interface per use case. See [ADR-0005](docs/adr/0005-core-driven-structure.md).
+The API follows the **Core-Driven** approach (Iván Abad, NetMentor): endpoints only translate HTTP, use cases hold the rules and inject what they need directly (the `DbContext` is already a unit of work), and infrastructure lives apart. No MediatR, no repository over EF Core, no interface per use case. Interfaces go where something actually varies or an external system is involved (payments, waiting room, a per-channel policy); the prototype has none of those yet, and the seams it does need come from the framework (`DbContext`, `HybridCache`, `TimeProvider`). See [ADR-0005](docs/adr/0005-core-driven-structure.md).
 
 ### Tests
 

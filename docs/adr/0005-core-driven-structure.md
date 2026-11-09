@@ -22,3 +22,15 @@ Follow the Core-Driven approach described by Iván Abad (NetMentor):
 - Each feature lives in a handful of files; a change such as "cancel a reservation" touches one use case, one endpoint and maybe one entity.
 - The core logic is tested end to end against a real PostgreSQL, because its correctness depends on the database (transactions, row locks, unique index). An in-memory provider would hide exactly what matters.
 - If the module grows, the folders can become projects without changing the dependency direction.
+
+## When an interface is added
+
+An interface earns its extra hop when something actually varies or crosses a boundary; it is not added by default. In this codebase that means:
+
+- **A real variation:** two implementations, or a business rule chosen at runtime, such as an allocation or pricing policy per sales channel. A strategy interface there keeps the use case closed to modification.
+- **An external system** that will be replaced or simulated in tests: a payment provider, the waiting room, notifications. The use case owns the interface (for example `IPaymentGateway`) and the adapter lives outside it.
+- **A module boundary:** when another module calls Sales or Inventory, through a contract the owning module publishes (ADR-0001).
+
+The prototype has none of these yet. The seams it does need are already abstractions from the framework: `DbContext` (unit of work), `HybridCache` (in memory today, Redis as a second level without code changes), `TimeProvider` (the clock, replaceable in tests), `IHttpClientFactory` with resilience, and `ILogger`. An `IReserveTickets` or an `IEventRepository` with a single implementation would add indirection to every read of the code and no extensibility.
+
+Extending the prototype stays additive: cancelling a reservation is a new `CancelReservation` use case and a `DELETE` endpoint, without changing existing classes.
